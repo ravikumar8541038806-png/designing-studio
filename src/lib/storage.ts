@@ -1,5 +1,6 @@
 import { uid } from './id'
-import { DEFAULT_CATALOG } from '../theme/presets'
+import { LAYOUTS, SLIDE_LAYOUTS, DEFAULT_CATALOG } from '../theme/presets'
+import { isKnownTheme } from '../theme/themes'
 import type { AppSettings, BrandPreset, Carousel, ModelOption, PdfDoc } from '../types'
 
 /**
@@ -39,13 +40,42 @@ export const DEFAULT_SETTINGS: AppSettings = {
   depth: 2,
   slideCount: 7,
   includeMcqs: true,
-  layout: 'academic',
+  layout: 'academic-clean',
+  slideLayout: 'academic',
+  themeId: 'pure-snow',
+  coverThemeId: 'pure-snow',
+  separateCoverTheme: false,
   headerStyle: 'classic',
   fontPairing: 'inter',
   paymentLock: false,
   directMode: false,
   brands: [defaultBrand],
   activeBrandId: defaultBrand.id,
+}
+
+/** V1 shipped four layouts and no separate theme model. Map them onto V2. */
+const LEGACY_LAYOUTS: Record<string, { layout: AppSettings['layout']; theme?: AppSettings['themeId'] }> = {
+  academic: { layout: 'academic-clean' },
+  minimal: { layout: 'minimalist-playbook' },
+  editorial: { layout: 'editorial-magazine' },
+  executive: { layout: 'executive-report', theme: 'dark-executive' },
+}
+
+function migrateLayouts(stored: Partial<AppSettings>): {
+  layout: AppSettings['layout']
+  themeId: AppSettings['themeId']
+} {
+  const rawLayout = String(stored.layout ?? '')
+  const legacy = LEGACY_LAYOUTS[rawLayout]
+  const layout = legacy
+    ? legacy.layout
+    : (LAYOUTS.find((preset) => preset.id === stored.layout)?.id ?? DEFAULT_SETTINGS.layout)
+  const layoutTheme = legacy?.theme
+  const knownTheme = isKnownTheme(stored.themeId)
+  const themeId = knownTheme
+    ? stored.themeId!
+    : (layoutTheme ?? DEFAULT_SETTINGS.themeId)
+  return { layout, themeId }
 }
 
 function readJson<T>(key: string): T | null {
@@ -84,12 +114,23 @@ export function loadSettings(): AppSettings {
     models = { ...models, gemini: DEFAULT_SETTINGS.models.gemini }
   }
 
+  const { layout, themeId } = migrateLayouts(stored)
+  const slideLayout = SLIDE_LAYOUTS.some((preset) => preset.id === stored.slideLayout)
+    ? (stored.slideLayout as AppSettings['slideLayout'])
+    : DEFAULT_SETTINGS.slideLayout
+  const coverThemeId = isKnownTheme(stored.coverThemeId) ? stored.coverThemeId : themeId
+
   return {
     ...DEFAULT_SETTINGS,
     ...stored,
     keys: { ...DEFAULT_SETTINGS.keys, ...stored.keys },
     models,
     catalog,
+    layout,
+    slideLayout,
+    themeId,
+    coverThemeId,
+    separateCoverTheme: Boolean(stored.separateCoverTheme),
     brands,
     activeBrandId:
       stored.activeBrandId && brands.some((b) => b.id === stored.activeBrandId)

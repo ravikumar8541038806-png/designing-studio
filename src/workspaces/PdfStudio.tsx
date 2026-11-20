@@ -186,6 +186,8 @@ export function PdfStudio({
             onExportZip={() => undefined}
             onExportSlide={() => undefined}
             onAddSlide={() => undefined}
+            doc={doc}
+            onDoc={handleDocChange}
           />
         </div>
       </aside>

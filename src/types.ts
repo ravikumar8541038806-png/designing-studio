@@ -1,9 +1,56 @@
 export type ProviderId = 'gemini' | 'anthropic'
 export type StudioTab = 'pdf' | 'carousel'
 export type LanguageId = 'en' | 'hi' | 'hinglish'
-export type LayoutId = 'academic' | 'minimal' | 'editorial' | 'executive'
+
+export type LayoutId =
+  // Education & exam notes
+  | 'academic-clean'
+  | 'coaching-handout'
+  | 'two-column-textbook'
+  | 'exam-cheatsheet'
+  // Business & corporate
+  | 'executive-report'
+  | 'agency-proposal'
+  | 'client-case-study'
+  | 'consulting-whitepaper'
+  // Creators & eBooks
+  | 'editorial-magazine'
+  | 'lead-magnet'
+  | 'minimalist-playbook'
+  // Operations & docs
+  | 'sop-manual'
+  | 'checklist-workbook'
+
+export type SlideLayoutId = 'academic' | 'minimal' | 'editorial' | 'executive'
+
 export type HeaderStyleId = 'classic' | 'band' | 'rule' | 'stack'
 export type FontPairingId = 'inter' | 'poppins' | 'editorial' | 'serif' | 'hindi'
+
+export type ThemeId =
+  // Snow & crisp light
+  | 'pure-snow'
+  | 'paper-ivory'
+  | 'cool-alabaster'
+  | 'arctic-minimal'
+  // Natural & organic
+  | 'forest-sage'
+  | 'warm-sand'
+  | 'terracotta-clay'
+  | 'ocean-mist'
+  // Aesthetic & editorial
+  | 'espresso-cream'
+  | 'matcha-minimal'
+  | 'muted-lavender'
+  | 'dusty-rose'
+  // Dark & luxury
+  | 'dark-executive'
+  | 'obsidian-gold'
+  | 'midnight-slate'
+  | 'deep-emerald-night'
+  // Academic & corporate
+  | 'royal-navy'
+  | 'oxford-crimson'
+  | 'slate-professional'
 
 export interface ModelOption {
   id: string
@@ -24,7 +71,17 @@ export interface BrandPreset {
   updatedAt: number
 }
 
-export type CalloutKind = 'fact' | 'exam' | 'note'
+export type CalloutKind = 'fact' | 'exam' | 'note' | 'tip' | 'warning' | 'quote' | 'summary'
+export type CalloutIcon = 'spark' | 'alert' | 'bulb' | 'pin' | 'quote' | 'check' | 'book' | 'shield'
+
+export type ChartKind = 'bar' | 'line' | 'donut' | 'hcompare'
+
+export interface TimelineItem {
+  id: string
+  date: string
+  title: string
+  description: string
+}
 
 export type DocBlock =
   | { id: string; type: 'lead'; text: string }
@@ -34,8 +91,42 @@ export type DocBlock =
   | { id: string; type: 'numbered'; items: string[] }
   | { id: string; type: 'keyterms'; items: { term: string; definition: string }[] }
   | { id: string; type: 'table'; caption: string; columns: string[]; rows: string[][] }
-  | { id: string; type: 'callout'; kind: CalloutKind; title: string; body: string }
+  | {
+      id: string
+      type: 'callout'
+      kind: CalloutKind
+      title: string
+      body: string
+      icon?: CalloutIcon
+      accent?: string
+    }
   | { id: string; type: 'quote'; text: string; cite: string }
+  | {
+      id: string
+      type: 'image'
+      url: string
+      caption: string
+      width: number
+      align: 'left' | 'center' | 'right'
+      rounded: boolean
+    }
+  | {
+      id: string
+      type: 'chart'
+      chart: ChartKind
+      title: string
+      labels: string[]
+      values: number[]
+      accent: string
+      accent2: string
+    }
+  | {
+      id: string
+      type: 'timeline'
+      title: string
+      orientation: 'vertical' | 'horizontal'
+      items: TimelineItem[]
+    }
 
 export interface DocSection {
   id: string
@@ -86,7 +177,15 @@ export interface AppSettings {
   depth: number
   slideCount: number
   includeMcqs: boolean
+  /** PDF page architecture. */
   layout: LayoutId
+  /** Carousel card architecture (kept separate from the PDF library). */
+  slideLayout: SlideLayoutId
+  /** Colour + mood theme for body pages. */
+  themeId: ThemeId
+  /** Theme used on the front cover when separateCoverTheme is on. */
+  coverThemeId: ThemeId
+  separateCoverTheme: boolean
   headerStyle: HeaderStyleId
   fontPairing: FontPairingId
   paymentLock: boolean

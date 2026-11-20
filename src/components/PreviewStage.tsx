@@ -229,7 +229,7 @@ export function PreviewStage({ naturalWidth, itemSelector, itemLabel, children }
         </div>
       </div>
 
-      <div className="preview-toolbar glass" role="toolbar" aria-label="Preview zoom and page controls">
+      <div className="preview-toolbar" role="toolbar" aria-label="Preview zoom and page controls">
         <button
           type="button"
           className="ptool ptool--icon"

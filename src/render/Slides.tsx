@@ -63,7 +63,7 @@ function SlideView({
     <article
       className={`slide slide--${slide.kind}`}
       data-slide={index}
-      data-layout={settings.layout}
+      data-layout={settings.slideLayout}
       data-header={settings.headerStyle}
       style={vars}
     >

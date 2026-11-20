@@ -30,10 +30,63 @@ export function setSectionHeading(doc: PdfDoc, sectionIndex: number, heading: st
 
 export function setBlockText(doc: PdfDoc, sectionIndex: number, blockIndex: number, text: string): PdfDoc {
   return updateBlock(doc, sectionIndex, blockIndex, (block) => {
-    if (block.type === 'bullets' || block.type === 'numbered' || block.type === 'keyterms') return block
-    if (block.type === 'table') return block
-    return { ...block, text }
+    if (block.type === 'lead' || block.type === 'paragraph' || block.type === 'subheading') {
+      return { ...block, text }
+    }
+    if (block.type === 'quote') return { ...block, text }
+    return block
   })
+}
+
+export function updateBlockById(
+  doc: PdfDoc,
+  sectionId: string,
+  blockId: string,
+  updater: (block: DocBlock) => DocBlock,
+): PdfDoc {
+  return {
+    ...doc,
+    sections: doc.sections.map((section) =>
+      section.id !== sectionId
+        ? section
+        : {
+            ...section,
+            blocks: section.blocks.map((block) => (block.id === blockId ? updater(block) : block)),
+          },
+    ),
+  }
+}
+
+export function removeBlockById(doc: PdfDoc, sectionId: string, blockId: string): PdfDoc {
+  return {
+    ...doc,
+    sections: doc.sections.map((section) =>
+      section.id !== sectionId
+        ? section
+        : { ...section, blocks: section.blocks.filter((block) => block.id !== blockId) },
+    ),
+  }
+}
+
+export function moveBlockById(
+  doc: PdfDoc,
+  sectionId: string,
+  blockId: string,
+  direction: -1 | 1,
+): PdfDoc {
+  return {
+    ...doc,
+    sections: doc.sections.map((section) => {
+      if (section.id !== sectionId) return section
+      const index = section.blocks.findIndex((block) => block.id === blockId)
+      const target = index + direction
+      if (index < 0 || target < 0 || target >= section.blocks.length) return section
+      const blocks = [...section.blocks]
+      const [moved] = blocks.splice(index, 1)
+      blocks.splice(target, 0, moved)
+      return { ...section, blocks }
+    }),
+  }
 }
 
 export function updateMcq(doc: PdfDoc, mcqIndex: number, patch: Partial<McqItem>): PdfDoc {

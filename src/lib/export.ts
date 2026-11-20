@@ -1,7 +1,7 @@
 import { toPng } from 'html-to-image'
 import { jsPDF } from 'jspdf'
 import JSZip from 'jszip'
-import { SLIDE } from './pagination'
+import { A4, SLIDE } from './pagination'
 
 export type ProgressFn = (done: number, total: number, label: string) => void
 
@@ -43,6 +43,27 @@ function dataUrlToBytes(dataUrl: string): Uint8Array {
   return bytes
 }
 
+/**
+ * The capture canvas must use the page's own theme colour, not white. For dark
+ * themes a white capture background bleeds through every anti-aliased edge and
+ * turns the export into a washed-out grey page.
+ */
+function pageBackground(node: HTMLElement): string {
+  const bg = getComputedStyle(node).backgroundColor
+  if (!bg || bg === 'transparent' || bg === 'rgba(0, 0, 0, 0)') return '#ffffff'
+  return bg
+}
+
+function rgbTuple(color: string): [number, number, number] {
+  const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i)
+  if (match) return [Number(match[1]), Number(match[2]), Number(match[3])]
+  const hex = color.replace('#', '')
+  if (/^[0-9a-f]{6}$/i.test(hex)) {
+    return [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)]
+  }
+  return [255, 255, 255]
+}
+
 export async function exportPdf(
   pages: HTMLElement[],
   fileName: string,
@@ -56,12 +77,26 @@ export async function exportPdf(
 
   for (let index = 0; index < pages.length; index += 1) {
     onProgress?.(index, pages.length, `Rendering page ${index + 1} of ${pages.length}`)
-    const dataUrl = await toPng(pages[index], {
-      pixelRatio: 2,
-      backgroundColor: '#ffffff',
-      skipAutoScale: true,
-    })
+    const node = pages[index]
+    const background = pageBackground(node)
+    let dataUrl: string
+    try {
+      dataUrl = await toPng(node, {
+        pixelRatio: 2,
+        width: A4.width,
+        height: A4.height,
+        backgroundColor: background,
+        skipAutoScale: true,
+        style: { margin: '0', transform: 'none', printColorAdjust: 'exact' },
+      })
+    } catch {
+      throw new Error(`Page ${index + 1} could not be rendered. Try again or print to PDF instead.`)
+    }
     if (index > 0) pdf.addPage()
+    // Paint the theme colour first so no page can fall back to white paper.
+    const [r, g, b] = rgbTuple(background)
+    pdf.setFillColor(r, g, b)
+    pdf.rect(0, 0, pageWidth, pageHeight, 'F')
     pdf.addImage(dataUrl, 'PNG', 0, 0, pageWidth, pageHeight, undefined, 'FAST')
     await new Promise((resolve) => setTimeout(resolve, 30))
   }
@@ -95,8 +130,9 @@ async function captureSlide(node: HTMLElement): Promise<string> {
       pixelRatio: 2,
       width: SLIDE.width,
       height: SLIDE.height,
-      backgroundColor: '#ffffff',
+      backgroundColor: pageBackground(clone),
       skipAutoScale: true,
+      style: { printColorAdjust: 'exact' },
     })
   } finally {
     host.remove()

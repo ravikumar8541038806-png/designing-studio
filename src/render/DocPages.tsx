@@ -1,11 +1,21 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { CSSProperties } from 'react'
 import { Editable } from '../components/Editable'
 import { setBlockText, setSectionHeading, updateBlock, updateMcq } from '../lib/docOps'
+import { CALLOUT_LABELS } from '../lib/blocks'
 import { A4, CONTENT_HEIGHT, CONTENT_WIDTH, FLOW_GAP, paginate } from '../lib/pagination'
 import type { FlowItem } from '../lib/pagination'
+import { themeFor } from '../theme/themes'
+import { ChartSvg } from './charts'
 import { BrandMark, Watermark, paperVars } from './chrome'
-import type { AppSettings, BrandPreset, DocBlock, McqItem, PdfDoc } from '../types'
+import type {
+  AppSettings,
+  BrandPreset,
+  CalloutIcon,
+  DocBlock,
+  McqItem,
+  PdfDoc,
+} from '../types'
 
 interface Props {
   doc: PdfDoc
@@ -13,6 +23,71 @@ interface Props {
   brand: BrandPreset
   onChange: (doc: PdfDoc) => void
   onPageCount?: (count: number) => void
+}
+
+const ICON_PATHS: Record<CalloutIcon, ReactNode> = {
+  spark: <path d="M8 1.8 9.3 6l4.2 1.3-4.2 1.3L8 12.8 6.7 8.6 2.5 7.3 6.7 6z" />,
+  alert: (
+    <>
+      <path d="M8 2.2 14.4 13H1.6z" />
+      <path d="M8 6.4v3.1M8 11.3v.2" />
+    </>
+  ),
+  bulb: (
+    <>
+      <path d="M5.6 10.2a4.2 4.2 0 1 1 4.8 0" />
+      <path d="M6.4 12.2h3.2M6.9 14h2.2" />
+    </>
+  ),
+  pin: (
+    <>
+      <circle cx="8" cy="6.6" r="2.6" />
+      <path d="M8 14.2V9.2" />
+    </>
+  ),
+  quote: <path d="M3 9.4V5.2h4v3.2c0 1.6-.8 2.8-2.4 3.4M9.6 9.4V5.2h4v3.2c0 1.6-.8 2.8-2.4 3.4" />,
+  check: <path d="m2.8 8.4 3.2 3.2 7-7.4" />,
+  book: (
+    <>
+      <path d="M2.6 3.4h4.2a1.4 1.4 0 0 1 1.2 1.4v8.4a1.6 1.6 0 0 0-1.6-1.2H2.6z" />
+      <path d="M13.4 3.4H9.2A1.4 1.4 0 0 0 8 4.8v8.4a1.6 1.6 0 0 1 1.6-1.2h3.8z" />
+    </>
+  ),
+  shield: (
+    <>
+      <path d="M8 1.8 13.2 4v4.4c0 2.8-2.2 4.8-5.2 5.8-3-1-5.2-3-5.2-5.8V4z" />
+      <path d="m5.8 7.8 1.6 1.6 3-3.1" />
+    </>
+  ),
+}
+
+const DEFAULT_ICON: Record<string, CalloutIcon> = {
+  exam: 'spark',
+  fact: 'pin',
+  note: 'book',
+  tip: 'bulb',
+  warning: 'alert',
+  quote: 'quote',
+  summary: 'check',
+}
+
+export function CalloutGlyph({ icon }: { icon: CalloutIcon }) {
+  return (
+    <svg
+      className="callout__icon"
+      viewBox="0 0 16 16"
+      width={14}
+      height={14}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.4}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {ICON_PATHS[icon]}
+    </svg>
+  )
 }
 
 function RunningHeader({
@@ -74,7 +149,8 @@ function Cover({
   totalPages: number
   onChange: (doc: PdfDoc) => void
 }) {
-  const vars = paperVars(settings, brand)
+  const vars = paperVars(settings, brand, 'cover')
+  const theme = themeFor(settings, 'cover')
   const date = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
   return (
     <article
@@ -82,6 +158,7 @@ function Cover({
       data-pdf-page="cover"
       data-layout={settings.layout}
       data-header={settings.headerStyle}
+      data-paper-dark={theme.dark ? 'true' : 'false'}
       style={vars}
     >
       <div className="cover__wash" aria-hidden="true" />
@@ -328,12 +405,17 @@ function BlockView({
           </figure>
         </div>
       )
-    case 'callout':
+    case 'callout': {
+      const icon = (block.icon ?? DEFAULT_ICON[block.kind] ?? 'pin') as CalloutIcon
       return (
         <div className={`blk blk--callout blk--callout-${block.kind}`}>
-          <aside className="callout">
+          <aside
+            className="callout"
+            style={block.accent ? ({ '--callout-accent': block.accent } as CSSProperties) : undefined}
+          >
             <div className="callout__label">
-              {block.kind === 'exam' ? 'Exam Important' : block.kind === 'note' ? 'Note' : 'Key Fact'}
+              <CalloutGlyph icon={icon} />
+              <span>{CALLOUT_LABELS[block.kind] ?? 'Key Fact'}</span>
             </div>
             <Editable
               as="h4"
@@ -355,6 +437,7 @@ function BlockView({
           </aside>
         </div>
       )
+    }
     case 'quote':
       return (
         <div className="blk blk--quote">
@@ -370,6 +453,122 @@ function BlockView({
               }
             />
           </blockquote>
+        </div>
+      )
+    case 'image': {
+      const width = Math.min(100, Math.max(25, block.width || 100))
+      return (
+        <div className={`blk blk--image blk--image-${block.align}`}>
+          <figure className="img-block" style={{ width: `${width}%` }}>
+            {block.url ? (
+              <img
+                className={`img-block__img${block.rounded ? ' is-rounded' : ''}`}
+                src={block.url}
+                alt={block.caption || 'Document image'}
+              />
+            ) : (
+              <div className="img-block__empty">Paste an image URL or upload one in the Design panel</div>
+            )}
+            <Editable
+              as="figcaption"
+              className="img-block__cap"
+              value={block.caption}
+              placeholder="Image caption"
+              onChange={(value) =>
+                patch((current) => (current.type === 'image' ? { ...current, caption: value } : current))
+              }
+            />
+          </figure>
+        </div>
+      )
+    }
+    case 'chart':
+      return (
+        <div className="blk blk--chart">
+          <ChartSvg
+            chart={block.chart}
+            title={block.title}
+            labels={block.labels}
+            values={block.values}
+            accent={block.accent || 'var(--brand)'}
+            accent2={block.accent2 || 'var(--accent)'}
+          />
+        </div>
+      )
+    case 'timeline':
+      return (
+        <div className={`blk blk--timeline tl--${block.orientation}`}>
+          <Editable
+            as="h4"
+            className="tl__title"
+            value={block.title}
+            placeholder="Timeline title"
+            onChange={(value) =>
+              patch((current) => (current.type === 'timeline' ? { ...current, title: value } : current))
+            }
+          />
+          <ol className="tl">
+            {block.items.map((event, index) => (
+              <li className="tl__item" key={event.id}>
+                <span className="tl__dot" aria-hidden="true" />
+                <Editable
+                  as="span"
+                  className="tl__date"
+                  value={event.date}
+                  placeholder="Year"
+                  onChange={(value) =>
+                    patch((current) =>
+                      current.type === 'timeline'
+                        ? {
+                            ...current,
+                            items: current.items.map((it, i) => (i === index ? { ...it, date: value } : it)),
+                          }
+                        : current,
+                    )
+                  }
+                />
+                <div className="tl__body">
+                  <Editable
+                    as="span"
+                    className="tl__event"
+                    value={event.title}
+                    placeholder="Event title"
+                    onChange={(value) =>
+                      patch((current) =>
+                        current.type === 'timeline'
+                          ? {
+                              ...current,
+                              items: current.items.map((it, i) =>
+                                i === index ? { ...it, title: value } : it,
+                              ),
+                            }
+                          : current,
+                      )
+                    }
+                  />
+                  <Editable
+                    as="span"
+                    className="tl__desc"
+                    value={event.description}
+                    multiline
+                    placeholder="Short description"
+                    onChange={(value) =>
+                      patch((current) =>
+                        current.type === 'timeline'
+                          ? {
+                              ...current,
+                              items: current.items.map((it, i) =>
+                                i === index ? { ...it, description: value } : it,
+                              ),
+                            }
+                          : current,
+                      )
+                    }
+                  />
+                </div>
+              </li>
+            ))}
+          </ol>
         </div>
       )
     default:
@@ -447,10 +646,18 @@ function McqView({
 }
 
 export function DocPages({ doc, settings, brand, onChange, onPageCount }: Props) {
-  const vars = paperVars(settings, brand)
+  const vars = paperVars(settings, brand, 'body')
+  const theme = themeFor(settings, 'body')
   const measureRef = useRef<HTMLDivElement>(null)
-  const [pages, setPages] = useState<number[][]>([])
+  // page → column → flow-item indices
+  const [pages, setPages] = useState<number[][][]>([])
   const [fontsReady, setFontsReady] = useState(false)
+  // The textbook layout places body content in two measured columns, so one
+  // page holds roughly twice the single-column height.
+  const columns = settings.layout === 'two-column-textbook' ? 2 : 1
+  const columnGap = 30
+  const measureWidth =
+    columns === 2 ? Math.floor((CONTENT_WIDTH - columnGap) / 2) : CONTENT_WIDTH
 
   const items = useMemo<FlowItem[]>(() => {
     const list: FlowItem[] = []
@@ -495,11 +702,24 @@ export function DocPages({ doc, settings, brand, onChange, onPageCount }: Props)
     if (!root) return
     const nodes = Array.from(root.querySelectorAll<HTMLElement>('[data-measure-index]'))
     // offsetHeight is layout-based, so it stays correct inside the zoom transform.
-    const heights = nodes.map((node) => node.offsetHeight)
+    const measured = nodes.map((node) => node.offsetHeight)
     const sticky = items.map((item) => item.sticky)
-    setPages(paginate(heights, CONTENT_HEIGHT, sticky, FLOW_GAP))
+    // Two columns are packed as separate measured columns and then paired onto
+    // pages, so neither column can ever outgrow the A4 body height.
+    const columnCapacity = CONTENT_HEIGHT - (columns === 2 ? 80 : 80)
+    const columnsOfItems = paginate(measured, columnCapacity, sticky, FLOW_GAP)
+    const grouped: number[][][] =
+      columns === 2
+        ? columnsOfItems.reduce<number[][][]>((acc, column, index) => {
+            if (index % 2 === 0) acc.push([column])
+            else acc[acc.length - 1].push(column)
+            return acc
+          }, [])
+        : columnsOfItems.map((column) => [column])
+    setPages(grouped)
   }, [
     items,
+    columns,
     settings.layout,
     settings.fontPairing,
     settings.headerStyle,
@@ -561,6 +781,17 @@ export function DocPages({ doc, settings, brand, onChange, onPageCount }: Props)
   const totalPages = pages.length + 1
   const pageStyle: CSSProperties = { width: A4.width, height: A4.height }
 
+  const renderPageItems = (indices: number[]) =>
+    indices.map((itemIndex) => {
+      const item = items[itemIndex]
+      if (!item) return null
+      return (
+        <div className="flow-item" key={item.key}>
+          {renderItem(item)}
+        </div>
+      )
+    })
+
   useEffect(() => {
     onPageCount?.(pages.length + 1)
   }, [pages.length, onPageCount])
@@ -573,9 +804,10 @@ export function DocPages({ doc, settings, brand, onChange, onPageCount }: Props)
           className="paper paper--measure"
           data-layout={settings.layout}
           data-header={settings.headerStyle}
+          data-paper-dark={theme.dark ? 'true' : 'false'}
           style={vars}
         >
-          <div className="paper-flow" style={{ width: CONTENT_WIDTH, gap: FLOW_GAP }}>
+          <div className="paper-flow" style={{ width: measureWidth, gap: FLOW_GAP }}>
             {items.map((item, index) => (
               <div className="flow-item" key={item.key} data-measure-index={index}>
                 {renderItem(item)}
@@ -593,28 +825,31 @@ export function DocPages({ doc, settings, brand, onChange, onPageCount }: Props)
         onChange={onChange}
       />
 
-      {pages.map((pageItems, pageIndex) => (
+      {pages.map((pageColumns, pageIndex) => (
         <article
           className="paper-page"
           data-pdf-page="page"
           data-layout={settings.layout}
           data-header={settings.headerStyle}
+          data-paper-dark={theme.dark ? 'true' : 'false'}
           style={{ ...vars, ...pageStyle }}
           key={`page-${pageIndex}`}
         >
           <RunningHeader style={settings.headerStyle} doc={doc} brand={brand} />
           <div className="paper-body">
-            <div className="paper-flow" style={{ gap: FLOW_GAP }}>
-              {pageItems.map((itemIndex) => {
-                const item = items[itemIndex]
-                if (!item) return null
-                return (
-                  <div className="flow-item" key={item.key}>
-                    {renderItem(item)}
+            {columns === 2 ? (
+              <div className="paper-cols" style={{ columnGap }}>
+                {pageColumns.map((column, columnIndex) => (
+                  <div className="paper-col" key={columnIndex} style={{ gap: FLOW_GAP }}>
+                    {renderPageItems(column)}
                   </div>
-                )
-              })}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="paper-flow" style={{ gap: FLOW_GAP }}>
+                {renderPageItems(pageColumns[0] ?? [])}
+              </div>
+            )}
           </div>
           <PageFooter doc={doc} brand={brand} pageNumber={pageIndex + 2} totalPages={totalPages} />
           {settings.paymentLock ? <Watermark text={brand.watermark} /> : null}

@@ -5,6 +5,7 @@ import type {
   LayoutId,
   ModelOption,
   ProviderId,
+  SlideLayoutId,
 } from '../types'
 
 export interface LayoutPreset {
@@ -14,29 +15,151 @@ export interface LayoutPreset {
   swatch: [string, string, string]
 }
 
+export interface LayoutGroup {
+  id: string
+  name: string
+  blurb: string
+  layouts: LayoutId[]
+}
+
 export const LAYOUTS: LayoutPreset[] = [
   {
-    id: 'academic',
+    id: 'academic-clean',
     name: 'Academic Clean',
-    description: 'Serif headings, numbered sections, generous margins.',
+    description: 'Numbered sections, serif headings, balanced 64px margins.',
     swatch: ['#ffffff', '#0f172a', '#1d4ed8'],
+  },
+  {
+    id: 'coaching-handout',
+    name: 'Coaching Handout',
+    description: 'Dense revision sheet, boxed callouts with corner tags, tight leading.',
+    swatch: ['#fff7ed', '#3b2412', '#ea580c'],
+  },
+  {
+    id: 'two-column-textbook',
+    name: 'Two-Column Textbook',
+    description: 'Two-column body flow, drop-cap opener, full-width section rules.',
+    swatch: ['#f8f5ef', '#241f18', '#8b5e34'],
+  },
+  {
+    id: 'exam-cheatsheet',
+    name: 'Exam Cheat-Sheet',
+    description: 'Ultra-dense grid, uppercase section strips, two-up key terms.',
+    swatch: ['#f5f7fa', '#111827', '#dc2626'],
+  },
+  {
+    id: 'executive-report',
+    name: 'Executive Report',
+    description: 'Wide margins, oversized section numerals, muted boardroom rules.',
+    swatch: ['#ffffff', '#0b1b33', '#1d4ed8'],
+  },
+  {
+    id: 'agency-proposal',
+    name: 'Agency Proposal',
+    description: 'Accent side rail, pill section labels, airy proposal spacing.',
+    swatch: ['#ffffff', '#18181b', '#6366f1'],
+  },
+  {
+    id: 'client-case-study',
+    name: 'Client Case Study',
+    description: 'Sans structure, pull-quote emphasis, wide comparison tables.',
+    swatch: ['#fbfbfd', '#161616', '#0ea5e9'],
+  },
+  {
+    id: 'consulting-whitepaper',
+    name: 'Consulting Whitepaper',
+    description: 'Serif reading measure, small-caps subheads, numbered figures.',
+    swatch: ['#fdfdfb', '#1f2937', '#334155'],
+  },
+  {
+    id: 'editorial-magazine',
+    name: 'Modern Editorial Magazine',
+    description: 'Display headlines, gradient rules, drop caps and kickers.',
+    swatch: ['#ffffff', '#111111', '#ec4899'],
+  },
+  {
+    id: 'lead-magnet',
+    name: 'Lead Magnet Guide',
+    description: 'Centred cover, rounded callouts, friendly numbered steps.',
+    swatch: ['#f7fbff', '#0c2340', '#0ea5e9'],
+  },
+  {
+    id: 'minimalist-playbook',
+    name: 'Minimalist Playbook',
+    description: 'Hairline rules, tiny caps labels, maximum whitespace.',
+    swatch: ['#ffffff', '#111827', '#94a3b8'],
+  },
+  {
+    id: 'sop-manual',
+    name: 'Step-by-Step SOP Manual',
+    description: 'Numbered step cards, document code header, monospace step ids.',
+    swatch: ['#f8fafc', '#0f172a', '#0f766e'],
+  },
+  {
+    id: 'checklist-workbook',
+    name: 'Action Checklist Workbook',
+    description: 'Checkbox bullets, ruled write-in lines, boxed section headers.',
+    swatch: ['#fffdf6', '#232012', '#16a34a'],
+  },
+]
+
+export const LAYOUT_GROUPS: LayoutGroup[] = [
+  {
+    id: 'education',
+    name: 'Education & Exam Notes',
+    blurb: 'Revision-first architecture for coaching, school and university material.',
+    layouts: ['academic-clean', 'coaching-handout', 'two-column-textbook', 'exam-cheatsheet'],
+  },
+  {
+    id: 'business',
+    name: 'Business & Corporate',
+    blurb: 'Client-facing documents with boardroom hierarchy and clean tables.',
+    layouts: ['executive-report', 'agency-proposal', 'client-case-study', 'consulting-whitepaper'],
+  },
+  {
+    id: 'creators',
+    name: 'Creators & eBooks',
+    blurb: 'Long-form reading and lead magnets with editorial rhythm.',
+    layouts: ['editorial-magazine', 'lead-magnet', 'minimalist-playbook'],
+  },
+  {
+    id: 'operations',
+    name: 'Operations & Docs',
+    blurb: 'Process, checklists and internal runbooks that people actually use.',
+    layouts: ['sop-manual', 'checklist-workbook'],
+  },
+]
+
+export interface SlideLayoutPreset {
+  id: SlideLayoutId
+  name: string
+  description: string
+  swatch: [string, string, string]
+}
+
+export const SLIDE_LAYOUTS: SlideLayoutPreset[] = [
+  {
+    id: 'academic',
+    name: 'Academic Paper',
+    description: 'Warm paper, serif headlines, quiet footers.',
+    swatch: ['#f6f4ef', '#14161a', '#0f766e'],
   },
   {
     id: 'minimal',
     name: 'Modern Minimal',
-    description: 'Hairline rules, airy spacing, tiny caps labels.',
+    description: 'White canvas, hairline structure, tiny caps.',
     swatch: ['#ffffff', '#111827', '#94a3b8'],
   },
   {
     id: 'editorial',
     name: 'Bold Editorial',
-    description: 'Big display type, colour blocks, magazine rhythm.',
+    description: 'Colour wash, oversized display type, gradient accents.',
     swatch: ['#ffffff', '#111111', '#ec4899'],
   },
   {
     id: 'executive',
     name: 'Dark Executive',
-    description: 'Charcoal pages, luminous accents, boardroom feel.',
+    description: 'Charcoal canvas, luminous accent, premium feel.',
     swatch: ['#0f1115', '#f4f6fb', '#7c9cff'],
   },
 ]
@@ -199,6 +322,10 @@ export const DEPTH_OPTIONS = [
 
 export function layoutPreset(id: LayoutId): LayoutPreset {
   return LAYOUTS.find((l) => l.id === id) ?? LAYOUTS[0]
+}
+
+export function slideLayoutPreset(id: SlideLayoutId): SlideLayoutPreset {
+  return SLIDE_LAYOUTS.find((l) => l.id === id) ?? SLIDE_LAYOUTS[0]
 }
 
 export function fontPreset(id: FontPairingId): FontPreset {

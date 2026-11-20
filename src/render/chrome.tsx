@@ -1,14 +1,31 @@
 import type { CSSProperties } from 'react'
 import { fontPreset } from '../theme/presets'
+import { themeFor } from '../theme/themes'
 import type { AppSettings, BrandPreset } from '../types'
 
-export function paperVars(settings: AppSettings, brand: BrandPreset): CSSProperties {
+/**
+ * Every page paints its own theme tokens inline. That keeps dark themes
+ * full-bleed in the exported PDF and in the print preview, because the canvas
+ * background travels with the node instead of depending on a stylesheet rule.
+ */
+export function paperVars(
+  settings: AppSettings,
+  brand: BrandPreset,
+  surface: 'body' | 'cover' = 'body',
+): CSSProperties {
   const font = fontPreset(settings.fontPairing)
+  const theme = themeFor(settings, surface)
   return {
     '--brand': brand.primary,
     '--accent': brand.accent,
     '--font-head': font.headingStack,
     '--font-body': font.bodyStack,
+    '--paper-bg': theme.bg,
+    '--paper-ink': theme.ink,
+    '--paper-muted': theme.muted,
+    '--paper-soft': theme.soft,
+    '--paper-line': theme.line,
+    '--paper-highlight': theme.highlight,
   } as CSSProperties
 }
 

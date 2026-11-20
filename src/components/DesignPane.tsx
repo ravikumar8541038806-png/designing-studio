@@ -1,6 +1,16 @@
+import { useState } from 'react'
+import { BlockStudio } from './BlockStudio'
 import { Button, Icon, SectionLabel, Toggle } from './ui'
-import { FONT_PAIRINGS, HEADER_STYLES, LAYOUTS, fontPreset } from '../theme/presets'
-import type { AppSettings, StudioTab } from '../types'
+import {
+  FONT_PAIRINGS,
+  HEADER_STYLES,
+  LAYOUTS,
+  LAYOUT_GROUPS,
+  SLIDE_LAYOUTS,
+  fontPreset,
+} from '../theme/presets'
+import { THEME_GROUPS, themeName, themeTokens } from '../theme/themes'
+import type { AppSettings, PdfDoc, StudioTab, ThemeId } from '../types'
 
 export function DesignPane({
   mode,
@@ -14,6 +24,8 @@ export function DesignPane({
   onExportZip,
   onExportSlide,
   onAddSlide,
+  doc,
+  onDoc,
 }: {
   mode: StudioTab
   settings: AppSettings
@@ -26,34 +38,196 @@ export function DesignPane({
   onExportZip: () => void
   onExportSlide: (index: number) => void
   onAddSlide: () => void
+  doc?: PdfDoc
+  onDoc?: (doc: PdfDoc) => void
 }) {
+  const [layoutGroup, setLayoutGroup] = useState(LAYOUT_GROUPS[0].id)
+  const [themeGroup, setThemeGroup] = useState(THEME_GROUPS[0].id)
+  const [themeTarget, setThemeTarget] = useState<'cover' | 'body'>('body')
+
+  const layouts = LAYOUTS.filter((layout) =>
+    LAYOUT_GROUPS.find((group) => group.id === layoutGroup)?.layouts.includes(layout.id),
+  )
+  const activeThemeGroup = THEME_GROUPS.find((group) => group.id === themeGroup) ?? THEME_GROUPS[0]
+  const bodyTheme = themeTokens(settings.themeId)
+  const coverTheme = themeTokens(settings.separateCoverTheme ? settings.coverThemeId : settings.themeId)
+
+  const selectTheme = (id: ThemeId) => {
+    if (!settings.separateCoverTheme) {
+      onPatch({ themeId: id, coverThemeId: id })
+      return
+    }
+    if (themeTarget === 'cover') onPatch({ coverThemeId: id })
+    else onPatch({ themeId: id })
+  }
+
+  const themeValue = settings.separateCoverTheme && themeTarget === 'cover' ? coverTheme : bodyTheme
+
   return (
     <div className="design-pane">
-      <SectionLabel>Base layout</SectionLabel>
-      <div className="layout-grid">
-        {LAYOUTS.map((layout) => (
-          <button
-            key={layout.id}
-            type="button"
-            className={`layout-card${settings.layout === layout.id ? ' is-active' : ''}`}
-            onClick={() => onPatch({ layout: layout.id })}
-            title={layout.description}
-          >
-            <span
-              className="layout-card__preview"
-              style={{ background: layout.swatch[0], color: layout.swatch[1] }}
-              aria-hidden="true"
-            >
-              <span className="lp-head" style={{ background: layout.swatch[2] }} />
-              <span className="lp-title" />
-              <span className="lp-line" />
-              <span className="lp-line lp-line--short" />
-              <span className="lp-block" style={{ background: layout.swatch[2] }} />
-            </span>
-            <span className="layout-card__name">{layout.name}</span>
-          </button>
-        ))}
-      </div>
+      {mode === 'pdf' ? (
+        <>
+          <SectionLabel>Base layout</SectionLabel>
+          <div className="cat-tabs" role="tablist" aria-label="Layout categories">
+            {LAYOUT_GROUPS.map((group) => (
+              <button
+                key={group.id}
+                type="button"
+                role="tab"
+                aria-selected={layoutGroup === group.id}
+                className={`cat-tab${layoutGroup === group.id ? ' is-active' : ''}`}
+                onClick={() => setLayoutGroup(group.id)}
+                title={group.blurb}
+              >
+                {group.name.split(' ')[0]}
+              </button>
+            ))}
+          </div>
+          <p className="cat-blurb">
+            {LAYOUT_GROUPS.find((group) => group.id === layoutGroup)?.blurb}
+          </p>
+          <div className="layout-grid">
+            {layouts.map((layout) => (
+              <button
+                key={layout.id}
+                type="button"
+                className={`layout-card${settings.layout === layout.id ? ' is-active' : ''}`}
+                onClick={() => onPatch({ layout: layout.id })}
+                title={layout.description}
+              >
+                <span
+                  className="layout-card__preview"
+                  style={{ background: layout.swatch[0], color: layout.swatch[1] }}
+                  aria-hidden="true"
+                >
+                  <span className="lp-head" style={{ background: layout.swatch[2] }} />
+                  <span className="lp-title" />
+                  <span className="lp-line" />
+                  <span className="lp-line lp-line--short" />
+                  <span className="lp-block" style={{ background: layout.swatch[2] }} />
+                </span>
+                <span className="layout-card__name">{layout.name}</span>
+              </button>
+            ))}
+          </div>
+
+          <SectionLabel>Theme · colour &amp; mood</SectionLabel>
+          <Toggle
+            checked={settings.separateCoverTheme}
+            onChange={(value) => onPatch({ separateCoverTheme: value })}
+            label="Separate cover page theme"
+            description="Pick one canvas for the front cover and another for every body page. Brand marks, fonts and accents stay shared."
+          />
+
+          {settings.separateCoverTheme ? (
+            <>
+              <div className="theme-surfaces">
+                {(['cover', 'body'] as const).map((surface) => {
+                  const theme = surface === 'cover' ? coverTheme : bodyTheme
+                  return (
+                    <button
+                      key={surface}
+                      type="button"
+                      className={`theme-surface${themeTarget === surface ? ' is-active' : ''}`}
+                      onClick={() => setThemeTarget(surface)}
+                    >
+                      <span className="theme-surface__label">
+                        {surface === 'cover' ? 'Front / Cover' : 'Body pages'}
+                      </span>
+                      <span
+                        className="theme-surface__chip"
+                        style={{ background: theme.bg, color: theme.ink, borderColor: theme.line }}
+                      >
+                        Aa
+                      </span>
+                      <span className="theme-surface__name">{theme.name}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              <p className="cat-blurb">
+                Editing the <strong>{themeTarget === 'cover' ? 'cover' : 'body'}</strong> theme — pick a
+                swatch below.
+              </p>
+            </>
+          ) : (
+            <p className="cat-blurb">
+              One theme for the whole PDF. Current: <strong>{bodyTheme.name}</strong>
+            </p>
+          )}
+
+          <div className="cat-tabs" role="tablist" aria-label="Theme categories">
+            {THEME_GROUPS.map((group) => (
+              <button
+                key={group.id}
+                type="button"
+                role="tab"
+                aria-selected={themeGroup === group.id}
+                className={`cat-tab${themeGroup === group.id ? ' is-active' : ''}`}
+                onClick={() => setThemeGroup(group.id)}
+                title={group.blurb}
+              >
+                {group.name.split(' ')[0]}
+              </button>
+            ))}
+          </div>
+
+          <div className="theme-grid">
+            {activeThemeGroup.themes.map((id) => {
+              const theme = themeTokens(id)
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className={`theme-card${themeValue.id === id ? ' is-active' : ''}`}
+                  onClick={() => selectTheme(id)}
+                  title={`${themeName(id)}${theme.dark ? ' · dark' : ''}`}
+                >
+                  <span className="theme-card__swatch" style={{ background: theme.bg }}>
+                    <span className="theme-card__ink" style={{ background: theme.ink }} />
+                    <span className="theme-card__soft" style={{ background: theme.soft }} />
+                    <span className="theme-card__line" style={{ background: theme.line }} />
+                  </span>
+                  <span className="theme-card__name">{theme.name}</span>
+                  {themeValue.id === id ? (
+                    <span className="theme-card__check" aria-hidden="true">
+                      <Icon name="check" size={11} />
+                    </span>
+                  ) : null}
+                </button>
+              )
+            })}
+          </div>
+        </>
+      ) : (
+        <>
+          <SectionLabel>Slide layout</SectionLabel>
+          <div className="layout-grid">
+            {SLIDE_LAYOUTS.map((layout) => (
+              <button
+                key={layout.id}
+                type="button"
+                className={`layout-card${settings.slideLayout === layout.id ? ' is-active' : ''}`}
+                onClick={() => onPatch({ slideLayout: layout.id })}
+                title={layout.description}
+              >
+                <span
+                  className="layout-card__preview"
+                  style={{ background: layout.swatch[0], color: layout.swatch[1] }}
+                  aria-hidden="true"
+                >
+                  <span className="lp-head" style={{ background: layout.swatch[2] }} />
+                  <span className="lp-title" />
+                  <span className="lp-line" />
+                  <span className="lp-line lp-line--short" />
+                  <span className="lp-block" style={{ background: layout.swatch[2] }} />
+                </span>
+                <span className="layout-card__name">{layout.name}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       <SectionLabel>Header style</SectionLabel>
       <div className="header-grid">
@@ -92,6 +266,13 @@ export function DesignPane({
         ))}
       </div>
 
+      {mode === 'pdf' && doc && onDoc ? (
+        <>
+          <SectionLabel>Visual blocks</SectionLabel>
+          <BlockStudio doc={doc} onChange={onDoc} />
+        </>
+      ) : null}
+
       <SectionLabel>Delivery</SectionLabel>
       <div className="lock-card">
         <Toggle
@@ -111,7 +292,7 @@ export function DesignPane({
         <div className="export-block">
           <div className="export-stats">
             <span>{pageCount} A4 pages</span>
-            <span>Cover + body</span>
+            <span>Full-bleed theme</span>
           </div>
           <Button variant="primary" icon="download" full onClick={onExportPdf} disabled={Boolean(busy)}>
             {busy ?? 'Download print-ready PDF'}
@@ -120,7 +301,8 @@ export function DesignPane({
             Print / vector PDF
           </Button>
           <p className="export-note">
-            Pages are placed on a measured A4 grid, so tables, callouts and MCQs never split across a page break.
+            Page backgrounds, tables and callouts are captured with the page itself, so dark themes export
+            full-bleed instead of printing white.
           </p>
         </div>
       ) : (
