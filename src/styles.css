@@ -3657,3 +3657,77 @@ a:hover {
     page-break-inside: avoid;
   }
 }
+
+/* Direct Mode toggle + model notes */
+.direct-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.direct-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(16, 24, 40, 0.1);
+  background: rgba(255, 255, 255, 0.66);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: transform 0.18s var(--spring, cubic-bezier(0.34, 1.56, 0.64, 1)),
+    background 0.18s var(--ease-out, ease), border-color 0.18s var(--ease-out, ease),
+    box-shadow 0.18s var(--ease-out, ease);
+}
+
+.direct-toggle:hover {
+  border-color: rgba(91, 108, 255, 0.4);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px -12px rgba(16, 24, 40, 0.5);
+}
+
+.direct-toggle:active {
+  transform: scale(0.97);
+}
+
+.direct-toggle__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(16, 24, 40, 0.24);
+  transition: background 0.2s var(--ease-out, ease), box-shadow 0.2s var(--ease-out, ease);
+}
+
+.direct-toggle.is-on {
+  background: rgba(91, 108, 255, 0.1);
+  border-color: rgba(91, 108, 255, 0.36);
+  color: var(--brand-deep);
+}
+
+.direct-toggle.is-on .direct-toggle__dot {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15);
+}
+
+.direct-row__hint {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.01em;
+}
+
+.model-note {
+  display: block;
+  margin-top: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--brand-deep);
+  letter-spacing: 0.01em;
+}
+
+.custom-model {
+  margin-top: 8px;
+}

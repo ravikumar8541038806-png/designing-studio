@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BrandVault } from './components/BrandVault'
 import { Rail } from './components/Rail'
 import { SettingsModal } from './components/SettingsModal'
@@ -6,6 +6,7 @@ import { TopBar } from './components/TopBar'
 import { CarouselStudio } from './workspaces/CarouselStudio'
 import { PdfStudio } from './workspaces/PdfStudio'
 import { SAMPLE_CAROUSEL, SAMPLE_DOC, SAMPLE_SOURCE } from './data/sample'
+import { listModels, pickDefaultModel } from './lib/ai'
 import { uid } from './lib/id'
 import {
   activeBrand,
@@ -39,6 +40,42 @@ export default function App() {
   const [toasts, setToasts] = useState<Toast[]>([])
 
   const brand = useMemo(() => activeBrand(settings), [settings])
+  const catalogBootstrapped = useRef(false)
+
+  // Replace stale/hardcoded model ids with the account's real list on first load.
+  useEffect(() => {
+    if (catalogBootstrapped.current) return
+    catalogBootstrapped.current = true
+    const provider = settings.provider
+    const key = settings.keys[provider]
+    if (!key.trim()) return
+
+    let cancelled = false
+    void listModels(provider, key)
+      .then((models) => {
+        if (cancelled || !models.length) return
+        setSettings((current) => {
+          const selected = current.models[provider]
+          const listed = models.some((model) => model.id === selected)
+          const wasCatalogued = current.catalog[provider].some((model) => model.id === selected)
+          const nextModel = listed || (!wasCatalogued && selected.trim()) ? selected : pickDefaultModel(models)
+          return {
+            ...current,
+            catalog: { ...current.catalog, [provider]: models },
+            models: { ...current.models, [provider]: nextModel },
+          }
+        })
+      })
+      .catch(() => {
+        /* offline or invalid key — generation surfaces the real error */
+      })
+
+    return () => {
+      cancelled = true
+    }
+    // Runs once with the saved settings; later refreshes come from API Settings.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     const timer = window.setTimeout(() => saveSettings(settings), 220)

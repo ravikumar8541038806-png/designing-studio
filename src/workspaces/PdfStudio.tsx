@@ -5,6 +5,7 @@ import { PreviewStage } from '../components/PreviewStage'
 import { SourcePanel } from '../components/SourcePanel'
 import { DocPages } from '../render/DocPages'
 import { generateDoc } from '../lib/ai'
+import { parseDocDirect } from '../lib/directMode'
 import { A4 } from '../lib/pagination'
 import { exportPdf as renderPdf, slugify } from '../lib/export'
 import { extractPdfText } from '../lib/pdfExtract'
@@ -49,20 +50,28 @@ export function PdfStudio({
   }
 
   const handleGenerate = async () => {
+    if (generating) return
     setGenerating(true)
     setGenError(null)
     try {
-      const next = await generateDoc(settings, source, brand)
+      // Direct Mode parses in this browser; the AI path is the only one that waits.
+      const next = settings.directMode ? parseDocDirect(source) : await generateDoc(settings, source, brand)
       onDoc(next)
-      notify(`Document structured — ${next.sections.length} sections`, 'success')
+      notify(
+        settings.directMode
+          ? `Rendered instantly — ${next.sections.length} sections, ${next.mcqs.length} MCQs`
+          : `Document structured — ${next.sections.length} sections`,
+        'success',
+      )
     } catch (error) {
       const message =
         error instanceof Error
           ? `${error.message}${'hint' in error && error.hint ? ` ${String(error.hint)}` : ''}`
           : 'Generation failed.'
       setGenError(message)
-      notify('Generation failed', 'error')
+      notify(settings.directMode ? 'Direct Mode could not parse that text' : 'Generation failed', 'error')
     } finally {
+      // Guarantees "Structuring…" never sticks, on success, error or timeout.
       setGenerating(false)
     }
   }

@@ -1,6 +1,12 @@
 import { uid } from './id'
 import { DEFAULT_CATALOG } from '../theme/presets'
-import type { AppSettings, BrandPreset, Carousel, PdfDoc } from '../types'
+import type { AppSettings, BrandPreset, Carousel, ModelOption, PdfDoc } from '../types'
+
+/**
+ * Model ids that shipped as defaults before the live loader existed. They were
+ * never real API models, so a catalog made only of these is replaced on load.
+ */
+const LEGACY_GEMINI_IDS = new Set(['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-4-hydrogen'])
 
 const SETTINGS_KEY = 'clientforge.settings.v1'
 const PDF_DRAFT_KEY = 'clientforge.draft.pdf.v1'
@@ -37,6 +43,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   headerStyle: 'classic',
   fontPairing: 'inter',
   paymentLock: false,
+  directMode: false,
   brands: [defaultBrand],
   activeBrandId: defaultBrand.id,
 }
@@ -56,15 +63,32 @@ export function loadSettings(): AppSettings {
   if (!stored) return DEFAULT_SETTINGS
   const brands =
     Array.isArray(stored.brands) && stored.brands.length ? stored.brands : DEFAULT_SETTINGS.brands
+  const storedGemini: ModelOption[] = stored.catalog?.gemini ?? []
+  const legacyGeminiSeed =
+    storedGemini.length > 0 &&
+    storedGemini.some((model) => LEGACY_GEMINI_IDS.has(model.id)) &&
+    !storedGemini.some((model) => model.note === 'Live from provider')
+
+  const geminiCatalog = legacyGeminiSeed
+    ? DEFAULT_CATALOG.gemini
+    : storedGemini.length
+      ? storedGemini
+      : DEFAULT_CATALOG.gemini
   const catalog = {
-    gemini: stored.catalog?.gemini?.length ? stored.catalog.gemini : DEFAULT_CATALOG.gemini,
+    gemini: geminiCatalog,
     anthropic: stored.catalog?.anthropic?.length ? stored.catalog.anthropic : DEFAULT_CATALOG.anthropic,
   }
+
+  let models = { ...DEFAULT_SETTINGS.models, ...stored.models }
+  if (legacyGeminiSeed && !geminiCatalog.some((model) => model.id === models.gemini)) {
+    models = { ...models, gemini: DEFAULT_SETTINGS.models.gemini }
+  }
+
   return {
     ...DEFAULT_SETTINGS,
     ...stored,
     keys: { ...DEFAULT_SETTINGS.keys, ...stored.keys },
-    models: { ...DEFAULT_SETTINGS.models, ...stored.models },
+    models,
     catalog,
     brands,
     activeBrandId:

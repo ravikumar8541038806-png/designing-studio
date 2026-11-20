@@ -90,6 +90,8 @@ export interface AppSettings {
   headerStyle: HeaderStyleId
   fontPairing: FontPairingId
   paymentLock: boolean
+  /** Parse pasted text in the browser and skip the AI call entirely. */
+  directMode: boolean
   brands: BrandPreset[]
   activeBrandId: string | null
 }

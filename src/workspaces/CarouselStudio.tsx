@@ -5,6 +5,7 @@ import { PreviewStage } from '../components/PreviewStage'
 import { SourcePanel } from '../components/SourcePanel'
 import { SlideDeck } from '../render/Slides'
 import { generateCarousel } from '../lib/ai'
+import { parseCarouselDirect } from '../lib/directMode'
 import { addSlide, removeSlide } from '../lib/docOps'
 import { SLIDE } from '../lib/pagination'
 import { exportSingleSlide, exportSlidesZip, slugify } from '../lib/export'
@@ -52,20 +53,29 @@ export function CarouselStudio({
     Array.from(deckRef.current?.querySelectorAll<HTMLElement>('[data-slide]') ?? [])
 
   const handleGenerate = async () => {
+    if (generating) return
     setGenerating(true)
     setGenError(null)
     try {
-      const next = await generateCarousel(settings, source, brand)
+      const next = settings.directMode
+        ? parseCarouselDirect(source, { handle: brand.handle })
+        : await generateCarousel(settings, source, brand)
       onCarousel(next)
-      notify(`Carousel ready — ${next.slides.length} slides`, 'success')
+      notify(
+        settings.directMode
+          ? `Rendered instantly — ${next.slides.length} slides`
+          : `Carousel ready — ${next.slides.length} slides`,
+        'success',
+      )
     } catch (error) {
       const message =
         error instanceof Error
           ? `${error.message}${'hint' in error && error.hint ? ` ${String(error.hint)}` : ''}`
           : 'Generation failed.'
       setGenError(message)
-      notify('Generation failed', 'error')
+      notify(settings.directMode ? 'Direct Mode could not parse that text' : 'Generation failed', 'error')
     } finally {
+      // Guarantees "Structuring…" never sticks, on success, error or timeout.
       setGenerating(false)
     }
   }

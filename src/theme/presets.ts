@@ -180,9 +180,9 @@ export const PROVIDERS: ProviderPreset[] = [
  */
 export const DEFAULT_CATALOG: Record<ProviderId, ModelOption[]> = {
   gemini: [
-    { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', note: 'Balanced speed and quality' },
-    { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite', note: 'Fastest and cheapest' },
-    { id: 'gemini-4-hydrogen', label: 'Gemini 4 Hydrogen', note: 'Frontier reasoning' },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', note: 'Recommended · fastest stable Flash' },
+    { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite', note: 'Fastest · low cost' },
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', note: 'Reasoning · slower' },
   ],
   anthropic: [
     { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', note: 'Balanced drafting' },

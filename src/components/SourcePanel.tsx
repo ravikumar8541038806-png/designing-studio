@@ -34,6 +34,14 @@ export function SourcePanel({
   const provider = providerPreset(settings.provider)
   const hasKey = Boolean(settings.keys[settings.provider]?.trim())
   const words = source.trim() ? source.trim().split(/\s+/).length : 0
+  const direct = settings.directMode
+  const actionLabel = direct
+    ? mode === 'pdf'
+      ? 'Render instantly'
+      : 'Build carousel now'
+    : mode === 'pdf'
+      ? 'Structure document'
+      : 'Generate carousel'
 
   return (
     <section className="source-block">
@@ -123,22 +131,52 @@ export function SourcePanel({
         </Field>
       )}
 
+      <div className="direct-row">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={direct}
+          className={`direct-toggle${direct ? ' is-on' : ''}`}
+          onClick={() => onPatch({ directMode: !direct })}
+          title="Parse the pasted text in this browser — no API call, no waiting"
+        >
+          <span className="direct-toggle__dot" aria-hidden="true" />
+          <span>Direct Mode (No AI)</span>
+        </button>
+        <span className="direct-row__hint">{direct ? 'Instant · zero API calls' : 'AI structuring'}</span>
+      </div>
+
       <div className="generate-block">
-        <Button variant="primary" icon="sparkles" full onClick={onGenerate} disabled={generating || !source.trim() || !hasKey}>
-          {generating ? 'Structuring…' : mode === 'pdf' ? 'Structure document' : 'Generate carousel'}
+        <Button
+          variant="primary"
+          icon={direct ? 'arrow' : 'sparkles'}
+          full
+          onClick={onGenerate}
+          disabled={generating || !source.trim() || (!direct && !hasKey)}
+        >
+          {generating ? (direct ? 'Rendering…' : 'Structuring…') : actionLabel}
         </Button>
-        <div className="generate-meta">
-          <button type="button" className="link-btn" onClick={onOpenSettings}>
-            {provider.short} · {settings.models[settings.provider] || 'no model'}
-          </button>
-          {!hasKey ? (
-            <button type="button" className="link-btn link-btn--warn" onClick={onOpenSettings}>
-              Add API key
+        {direct ? (
+          <div className="generate-meta">
+            <span className="generate-meta__ok">Parsed locally — no key needed</span>
+            <button type="button" className="link-btn" onClick={onOpenSettings}>
+              Output settings
             </button>
-          ) : (
-            <span className="generate-meta__ok">Key saved locally</span>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="generate-meta">
+            <button type="button" className="link-btn" onClick={onOpenSettings}>
+              {provider.short} · {settings.models[settings.provider] || 'no model'}
+            </button>
+            {!hasKey ? (
+              <button type="button" className="link-btn link-btn--warn" onClick={onOpenSettings}>
+                Add API key
+              </button>
+            ) : (
+              <span className="generate-meta__ok">Key saved locally</span>
+            )}
+          </div>
+        )}
       </div>
 
       {error ? <p className="inline-error inline-error--box">{error}</p> : null}

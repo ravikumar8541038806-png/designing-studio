@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button, Field, Modal, TextInput } from './ui'
-import { AiError, listModels } from '../lib/ai'
+import { AiError, listModels, pickDefaultModel } from '../lib/ai'
 import { PROVIDERS, providerPreset } from '../theme/presets'
 import type { AppSettings, ProviderId } from '../types'
 
@@ -23,15 +23,28 @@ export function SettingsModal({
   const [reveal, setReveal] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [feedback, setFeedback] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
-  const [customOverride, setCustomOverride] = useState(false)
+  const fetchedFor = useRef('')
 
   const known = catalog.some((model) => model.id === currentModel)
-  const customMode = customOverride || !known
 
   useEffect(() => {
-    setFeedback(null)
-    setCustomOverride(false)
-  }, [provider])
+    if (!open) {
+      fetchedFor.current = ''
+      return
+    }
+    const key = apiKey.trim()
+    if (!key) return
+    const token = `${provider}:${key}`
+    if (token === fetchedFor.current) return
+    // Opening the panel, or pasting a key, reads the live list so no stale
+    // hardcoded default is ever used.
+    const timer = window.setTimeout(() => {
+      fetchedFor.current = token
+      void refreshModels()
+    }, 700)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, provider, apiKey])
 
   const patch = (patchValue: Partial<AppSettings>) => onChange({ ...settings, ...patchValue })
 
@@ -49,17 +62,27 @@ export function SettingsModal({
   }
 
   const refreshModels = async () => {
+    if (!apiKey.trim()) {
+      setFeedback({ tone: 'error', text: 'Add an API key first — the list is read from your account.' })
+      return
+    }
     setRefreshing(true)
     setFeedback(null)
     try {
       const models = await listModels(provider, apiKey)
-      const keep = models.some((model) => model.id === currentModel)
+      const listed = models.some((model) => model.id === currentModel)
+      const wasCatalogued = catalog.some((model) => model.id === currentModel)
+      // Keep a hand-typed id; replace anything that the account no longer offers.
+      const nextModel = listed || (!wasCatalogued && currentModel.trim()) ? currentModel : pickDefaultModel(models)
       onChange({
         ...settings,
         catalog: { ...settings.catalog, [provider]: models },
-        models: { ...settings.models, [provider]: keep ? currentModel : models[0].id },
+        models: { ...settings.models, [provider]: nextModel },
       })
-      setFeedback({ tone: 'ok', text: `${models.length} models loaded from ${preset.name}.` })
+      setFeedback({
+        tone: 'ok',
+        text: `${models.length} models loaded · using ${nextModel}`,
+      })
     } catch (error) {
       const text =
         error instanceof AiError
@@ -136,17 +159,20 @@ export function SettingsModal({
         . {provider === 'anthropic' ? 'Claude accepts direct browser calls with its browser-access header; organisations with zero data retention block them.' : 'Gemini accepts direct browser calls.'}
       </p>
 
-      <Field label="Model" hint="Nothing is hardcoded — refresh from the provider or type any model id.">
+      <Field
+        label="Model"
+        hint={
+          provider === 'gemini'
+            ? 'Live from your account, fast stable Flash models first. Nothing is hardcoded.'
+            : 'Refresh to read the models your key can use.'
+        }
+      >
         <div className="model-row">
           <select
             className="select"
-            value={customMode ? '__custom__' : currentModel}
+            value={known ? currentModel : '__custom__'}
             onChange={(event) => {
-              if (event.target.value === '__custom__') {
-                setCustomOverride(true)
-                return
-              }
-              setCustomOverride(false)
+              if (event.target.value === '__custom__') return
               setModel(event.target.value)
             }}
           >
@@ -155,17 +181,23 @@ export function SettingsModal({
                 {model.label} — {model.id}
               </option>
             ))}
-            <option value="__custom__">Custom model id…</option>
+            <option value="__custom__">Custom model ID…</option>
           </select>
           <Button variant="ghost" icon="refresh" onClick={refreshModels} disabled={refreshing || !apiKey.trim()}>
             {refreshing ? 'Loading…' : 'Refresh'}
           </Button>
         </div>
-        {customMode ? (
-          <div className="custom-model">
-            <TextInput value={currentModel} onChange={setModel} placeholder="e.g. your-provider-model-id" mono />
-          </div>
+        {known ? (
+          <span className="model-note">{catalog.find((model) => model.id === currentModel)?.note ?? ''}</span>
         ) : null}
+        <div className="custom-model">
+          <TextInput
+            value={currentModel}
+            onChange={setModel}
+            placeholder="Custom Model ID — e.g. gemini-flash-latest"
+            mono
+          />
+        </div>
       </Field>
 
       {feedback ? (
