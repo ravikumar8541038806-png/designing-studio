@@ -494,7 +494,8 @@ export function DocPages({ doc, settings, brand, onChange, onPageCount }: Props)
     const root = measureRef.current
     if (!root) return
     const nodes = Array.from(root.querySelectorAll<HTMLElement>('[data-measure-index]'))
-    const heights = nodes.map((node) => node.getBoundingClientRect().height)
+    // offsetHeight is layout-based, so it stays correct inside the zoom transform.
+    const heights = nodes.map((node) => node.offsetHeight)
     const sticky = items.map((item) => item.sticky)
     setPages(paginate(heights, CONTENT_HEIGHT, sticky, FLOW_GAP))
   }, [

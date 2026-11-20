@@ -1,11 +1,14 @@
 import { useRef, useState } from 'react'
 import { BrandPanel } from '../components/BrandPanel'
 import { DesignPane } from '../components/DesignPane'
+import { PreviewStage } from '../components/PreviewStage'
 import { SourcePanel } from '../components/SourcePanel'
 import { DocPages } from '../render/DocPages'
 import { generateDoc } from '../lib/ai'
+import { A4 } from '../lib/pagination'
 import { exportPdf as renderPdf, slugify } from '../lib/export'
 import { extractPdfText } from '../lib/pdfExtract'
+import { useEditPulse } from '../lib/useEditPulse'
 import type { AppSettings, BrandPreset, PdfDoc } from '../types'
 
 interface Props {
@@ -38,6 +41,12 @@ export function PdfStudio({
   const [busy, setBusy] = useState<string | null>(null)
   const [pageCount, setPageCount] = useState(1)
   const previewRef = useRef<HTMLDivElement>(null)
+  const editPulse = useEditPulse()
+
+  const handleDocChange = (next: PdfDoc) => {
+    onDoc(next)
+    editPulse.pulse()
+  }
 
   const handleGenerate = async () => {
     setGenerating(true)
@@ -129,20 +138,28 @@ export function PdfStudio({
 
       <section className="pane pane--center">
         <div className="preview-bar glass">
+          <span className="preview-bar__dot" aria-hidden="true" />
           <span className="preview-bar__title">Live preview</span>
           <span className="preview-bar__hint">Click any text to edit it in place</span>
           <span className="preview-bar__spacer" />
+          {editPulse.state !== 'idle' ? (
+            <span className={`save-badge save-badge--${editPulse.state}`} role="status">
+              {editPulse.state === 'editing' ? 'Edited' : 'Saved'}
+            </span>
+          ) : null}
           <span className="pill">{pageCount} pages · A4</span>
           {settings.paymentLock ? <span className="pill pill--warn">Draft watermark</span> : null}
         </div>
-        <div className="preview-canvas" ref={previewRef}>
-          <DocPages
-            doc={doc}
-            settings={settings}
-            brand={brand}
-            onChange={onDoc}
-            onPageCount={setPageCount}
-          />
+        <div className="preview-host" ref={previewRef}>
+          <PreviewStage naturalWidth={A4.width} itemSelector="[data-pdf-page]" itemLabel="Page">
+            <DocPages
+              doc={doc}
+              settings={settings}
+              brand={brand}
+              onChange={handleDocChange}
+              onPageCount={setPageCount}
+            />
+          </PreviewStage>
         </div>
       </section>
 

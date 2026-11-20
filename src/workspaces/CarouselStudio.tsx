@@ -1,12 +1,15 @@
 import { useRef, useState } from 'react'
 import { BrandPanel } from '../components/BrandPanel'
 import { DesignPane } from '../components/DesignPane'
+import { PreviewStage } from '../components/PreviewStage'
 import { SourcePanel } from '../components/SourcePanel'
 import { SlideDeck } from '../render/Slides'
 import { generateCarousel } from '../lib/ai'
 import { addSlide, removeSlide } from '../lib/docOps'
+import { SLIDE } from '../lib/pagination'
 import { exportSingleSlide, exportSlidesZip, slugify } from '../lib/export'
 import { extractPdfText } from '../lib/pdfExtract'
+import { useEditPulse } from '../lib/useEditPulse'
 import type { AppSettings, BrandPreset, Carousel } from '../types'
 
 interface Props {
@@ -38,6 +41,12 @@ export function CarouselStudio({
   const [extracted, setExtracted] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const deckRef = useRef<HTMLDivElement>(null)
+  const editPulse = useEditPulse()
+
+  const handleCarouselChange = (next: Carousel) => {
+    onCarousel(next)
+    editPulse.pulse()
+  }
 
   const slideNodes = () =>
     Array.from(deckRef.current?.querySelectorAll<HTMLElement>('[data-slide]') ?? [])
@@ -137,20 +146,28 @@ export function CarouselStudio({
 
       <section className="pane pane--center">
         <div className="preview-bar glass">
+          <span className="preview-bar__dot" aria-hidden="true" />
           <span className="preview-bar__title">Live preview</span>
           <span className="preview-bar__hint">Edit headlines, bullets and the CTA inline</span>
           <span className="preview-bar__spacer" />
+          {editPulse.state !== 'idle' ? (
+            <span className={`save-badge save-badge--${editPulse.state}`} role="status">
+              {editPulse.state === 'editing' ? 'Edited' : 'Saved'}
+            </span>
+          ) : null}
           <span className="pill">{carousel.slides.length} slides · 1080 × 1350</span>
           {settings.paymentLock ? <span className="pill pill--warn">Draft watermark</span> : null}
         </div>
-        <div className="preview-canvas preview-canvas--deck" ref={deckRef}>
-          <SlideDeck
-            carousel={carousel}
-            settings={settings}
-            brand={brand}
-            onChange={onCarousel}
-            onRemoveSlide={(index) => onCarousel(removeSlide(carousel, index))}
-          />
+        <div className="preview-host" ref={deckRef}>
+          <PreviewStage naturalWidth={SLIDE.width} itemSelector="[data-slide]" itemLabel="Slide">
+            <SlideDeck
+              carousel={carousel}
+              settings={settings}
+              brand={brand}
+              onChange={handleCarouselChange}
+              onRemoveSlide={(index) => onCarousel(removeSlide(carousel, index))}
+            />
+          </PreviewStage>
         </div>
       </section>
 
