@@ -38,6 +38,7 @@ export function CarouselStudio({
 }: Props) {
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
+  const [genProgress, setGenProgress] = useState<number | null>(null)
   const [extracting, setExtracting] = useState<{ page: number; total: number } | null>(null)
   const [extracted, setExtracted] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -56,10 +57,11 @@ export function CarouselStudio({
     if (generating) return
     setGenerating(true)
     setGenError(null)
+    setGenProgress(null)
     try {
       const next = settings.directMode
         ? parseCarouselDirect(source, { handle: brand.handle })
-        : await generateCarousel(settings, source, brand)
+        : await generateCarousel(settings, source, brand, setGenProgress)
       onCarousel(next)
       notify(
         settings.directMode
@@ -77,6 +79,19 @@ export function CarouselStudio({
     } finally {
       // Guarantees "Structuring…" never sticks, on success, error or timeout.
       setGenerating(false)
+      setGenProgress(null)
+    }
+  }
+
+  /** One click in the error banner: build the deck offline, instantly. */
+  const handleUseDirectMode = () => {
+    setGenError(null)
+    try {
+      const next = parseCarouselDirect(source, { handle: brand.handle })
+      onCarousel(next)
+      notify(`Built instantly — ${next.slides.length} slides`, 'success')
+    } catch {
+      notify('Direct Mode could not parse that text', 'error')
     }
   }
 
@@ -148,6 +163,8 @@ export function CarouselStudio({
             onExtractPdf={handleExtract}
             extracting={extracting}
             extracted={extracted}
+            progress={genProgress}
+            onUseDirectMode={handleUseDirectMode}
           />
           <hr className="pane__hr" />
           <BrandPanel settings={settings} onChange={onSettings} />

@@ -3,11 +3,14 @@ import { BrandPanel } from '../components/BrandPanel'
 import { DesignPane } from '../components/DesignPane'
 import { PreviewStage } from '../components/PreviewStage'
 import { SourcePanel } from '../components/SourcePanel'
+import { SuggestionBox } from '../components/SuggestionBox'
+import { VisualStudio } from '../components/VisualStudio'
 import { DocPages } from '../render/DocPages'
 import { generateDoc } from '../lib/ai'
 import { parseDocDirect } from '../lib/directMode'
 import { A4 } from '../lib/pagination'
-import { exportPdf as renderPdf, slugify } from '../lib/export'
+import { exportPdf as renderPdf, printVectorPdf, slugify } from '../lib/export'
+import { insertBlock } from '../lib/blocks'
 import { extractPdfText } from '../lib/pdfExtract'
 import { useEditPulse } from '../lib/useEditPulse'
 import type { AppSettings, BrandPreset, PdfDoc } from '../types'
@@ -37,10 +40,12 @@ export function PdfStudio({
 }: Props) {
   const [generating, setGenerating] = useState(false)
   const [genError, setGenError] = useState<string | null>(null)
+  const [genProgress, setGenProgress] = useState<number | null>(null)
   const [extracting, setExtracting] = useState<{ page: number; total: number } | null>(null)
   const [extracted, setExtracted] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [pageCount, setPageCount] = useState(1)
+  const [pane, setPane] = useState<'design' | 'visual' | 'advisor'>('design')
   const previewRef = useRef<HTMLDivElement>(null)
   const editPulse = useEditPulse()
 
@@ -53,9 +58,12 @@ export function PdfStudio({
     if (generating) return
     setGenerating(true)
     setGenError(null)
+    setGenProgress(null)
     try {
-      // Direct Mode parses in this browser; the AI path is the only one that waits.
-      const next = settings.directMode ? parseDocDirect(source) : await generateDoc(settings, source, brand)
+      // Direct Mode parses in this browser; the AI path streams progress as it arrives.
+      const next = settings.directMode
+        ? parseDocDirect(source)
+        : await generateDoc(settings, source, brand, setGenProgress)
       onDoc(next)
       notify(
         settings.directMode
@@ -73,6 +81,19 @@ export function PdfStudio({
     } finally {
       // Guarantees "Structuring…" never sticks, on success, error or timeout.
       setGenerating(false)
+      setGenProgress(null)
+    }
+  }
+
+  /** One click in the error banner: format the pasted text offline, instantly. */
+  const handleUseDirectMode = () => {
+    setGenError(null)
+    try {
+      const next = parseDocDirect(source)
+      onDoc(next)
+      notify(`Formatted instantly — ${next.sections.length} sections, ${next.mcqs.length} MCQs`, 'success')
+    } catch {
+      notify('Direct Mode could not parse that text', 'error')
     }
   }
 
@@ -111,15 +132,16 @@ export function PdfStudio({
     }
   }
 
-  const handlePrint = () => {
-    const cleanup = () => {
-      document.body.classList.remove('printing')
-      window.removeEventListener('afterprint', cleanup)
+  const handlePrint = async () => {
+    setBusy('Preparing vector PDF…')
+    try {
+      await printVectorPdf(`${slugify(brand.brandName)}-${slugify(doc.title)}`, doc.title)
+      notify('Print dialog opened — choose “Save as PDF”, margins: None', 'info')
+    } catch {
+      notify('The print dialog could not be opened.', 'error')
+    } finally {
+      setBusy(null)
     }
-    window.addEventListener('afterprint', cleanup)
-    document.body.classList.add('printing')
-    window.print()
-    setTimeout(cleanup, 4000)
   }
 
   return (
@@ -139,6 +161,8 @@ export function PdfStudio({
             onExtractPdf={handleExtract}
             extracting={extracting}
             extracted={extracted}
+            progress={genProgress}
+            onUseDirectMode={handleUseDirectMode}
           />
           <hr className="pane__hr" />
           <BrandPanel settings={settings} onChange={onSettings} />
@@ -173,22 +197,57 @@ export function PdfStudio({
       </section>
 
       <aside className="pane pane--right glass">
+        <div className="studio-tabs" role="tablist" aria-label="PDF tools">
+          {(
+            [
+              ['design', 'Design'],
+              ['visual', 'Visual studio'],
+              ['advisor', 'Advisor'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={pane === id}
+              className={`studio-tab${pane === id ? ' is-active' : ''}`}
+              onClick={() => setPane(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="pane__scroll">
-          <DesignPane
-            mode="pdf"
-            settings={settings}
-            onPatch={(patch) => onSettings({ ...settings, ...patch })}
-            pageCount={pageCount}
-            slideCount={0}
-            busy={busy}
-            onExportPdf={handleExportPdf}
-            onPrint={handlePrint}
-            onExportZip={() => undefined}
-            onExportSlide={() => undefined}
-            onAddSlide={() => undefined}
-            doc={doc}
-            onDoc={handleDocChange}
-          />
+          {pane === 'design' ? (
+            <DesignPane
+              mode="pdf"
+              settings={settings}
+              onPatch={(patch) => onSettings({ ...settings, ...patch })}
+              pageCount={pageCount}
+              slideCount={0}
+              busy={busy}
+              onExportPdf={handleExportPdf}
+              onPrint={handlePrint}
+              onExportZip={() => undefined}
+              onExportSlide={() => undefined}
+              onAddSlide={() => undefined}
+              doc={doc}
+              onDoc={handleDocChange}
+            />
+          ) : null}
+          {pane === 'visual' ? (
+            <VisualStudio
+              settings={settings}
+              doc={doc}
+              notify={notify}
+              onInsert={(block, sectionId) =>
+                handleDocChange(insertBlock(doc, sectionId, block))
+              }
+            />
+          ) : null}
+          {pane === 'advisor' ? (
+            <SuggestionBox settings={settings} doc={doc} onChange={handleDocChange} notify={notify} />
+          ) : null}
         </div>
       </aside>
     </div>

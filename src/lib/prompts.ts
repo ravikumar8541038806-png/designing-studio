@@ -29,9 +29,10 @@ const MCQ_SCHEMA = `Mcq is: {"question":"string","options":["four distinct optio
 
 export function docSystemPrompt(): string {
   return [
-    'You are a senior academic editor and instructional designer who produces print-ready study notes and short eBook chapters for a client production studio.',
-    'You always answer with a single valid JSON object and nothing else: no prose, no markdown, no code fences, no comments, no trailing commas.',
-    'You never invent citations, page numbers or statistics that are not supported by the source material.',
+    'You are a senior academic editor producing print-ready study notes.',
+    'Structure the supplied text faithfully and concisely: keep its order, facts and terminology, and do not pad, editorialise, or rewrite every paragraph into a long essay.',
+    'Compress, never expand — each paragraph is 1 to 3 short sentences, and a table, bullet list or key-term block replaces prose wherever it says the same thing.',
+    'Answer with one valid JSON object and nothing else: no prose, no markdown fences, no comments, no trailing commas. Never invent citations, page numbers or statistics.',
   ].join(' ')
 }
 
@@ -44,10 +45,10 @@ export function docUserPrompt(input: {
 }): string {
   const depthRules =
     input.depth <= 1
-      ? 'DEPTH: concise revision sheet. 3 to 5 sections, 2 to 4 blocks per section, short sentences. Total 550-800 words.'
+      ? 'DEPTH: revision sheet. 3 to 5 sections, 2 to 4 short blocks per section.'
       : input.depth >= 3
-        ? 'DEPTH: full teaching chapter. 5 to 8 sections, 3 to 6 blocks per section, worked explanations and examples. Total 1400-2100 words.'
-        : 'DEPTH: balanced eBook chapter. 4 to 6 sections, 2 to 5 blocks per section. Total 900-1400 words.'
+        ? 'DEPTH: teaching chapter. 5 to 7 sections, 3 to 5 blocks per section, one worked example only where it earns its space.'
+        : 'DEPTH: balanced chapter. 4 to 6 sections, 2 to 5 short blocks per section.'
 
   const mcqRule = input.includeMcqs
     ? 'Include 4 to 8 MCQs in "mcqs" with exactly four options each. Put the exact correct option text in "answer" (not a letter). Every question must be answerable from the notes.'
@@ -76,7 +77,8 @@ STRUCTURE RULES
 - Never leave a field empty. Omit an optional block rather than returning placeholder text.
 
 WRITING STYLE
-- Teach, do not summarise: short declarative sentences, concrete examples, no filler like "In this section we will explore".
+- Compress, never expand: reuse the source's own wording, keep every paragraph to 1 to 3 short sentences, and never restate a point in two blocks.
+- Teach, do not summarise: declarative sentences, concrete examples, no filler like "In this section we will explore".
 - Headings are noun phrases, not questions.
 - The client brand is "${input.brand.brandName}". Do not add brand names, watermarks or footers into the JSON; the studio applies those.
 

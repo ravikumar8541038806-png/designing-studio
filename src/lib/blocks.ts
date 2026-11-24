@@ -6,6 +6,8 @@ export const CHART_KINDS: { id: ChartKind; label: string }[] = [
   { id: 'line', label: 'Line' },
   { id: 'donut', label: 'Pie / Donut' },
   { id: 'hcompare', label: 'Horizontal' },
+  { id: 'area', label: 'Area' },
+  { id: 'compare', label: 'Comparison' },
 ]
 
 export const CALLOUT_PRESETS = [
@@ -28,7 +30,9 @@ export const CALLOUT_LABELS: Record<string, string> = {
   note: 'Note',
 }
 
-export function createImageBlock(): DocBlock {
+type ChartBlock = Extract<DocBlock, { type: 'chart' }>
+
+export function createImageBlock(): Extract<DocBlock, { type: 'image' }> {
   return {
     id: uid('img'),
     type: 'image',
@@ -40,7 +44,7 @@ export function createImageBlock(): DocBlock {
   }
 }
 
-export function createChartBlock(): DocBlock {
+export function createChartBlock(): ChartBlock {
   return {
     id: uid('chart'),
     type: 'chart',
@@ -53,7 +57,7 @@ export function createChartBlock(): DocBlock {
   }
 }
 
-export function createTimelineBlock(): DocBlock {
+export function createTimelineBlock(): Extract<DocBlock, { type: 'timeline' }> {
   return {
     id: uid('tl'),
     type: 'timeline',
@@ -66,7 +70,7 @@ export function createTimelineBlock(): DocBlock {
   }
 }
 
-export function createCalloutBlock(): DocBlock {
+export function createCalloutBlock(): Extract<DocBlock, { type: 'callout' }> {
   return {
     id: uid('co'),
     type: 'callout',

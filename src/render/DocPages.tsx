@@ -7,6 +7,8 @@ import { A4, CONTENT_HEIGHT, CONTENT_WIDTH, FLOW_GAP, paginate } from '../lib/pa
 import type { FlowItem } from '../lib/pagination'
 import { themeFor } from '../theme/themes'
 import { ChartSvg } from './charts'
+import { DiagramView } from './diagram'
+import { MathView } from './math'
 import { BrandMark, Watermark, paperVars } from './chrome'
 import type {
   AppSettings,
@@ -490,9 +492,22 @@ function BlockView({
             title={block.title}
             labels={block.labels}
             values={block.values}
+            values2={block.values2}
             accent={block.accent || 'var(--brand)'}
             accent2={block.accent2 || 'var(--accent)'}
           />
+        </div>
+      )
+    case 'diagram':
+      return (
+        <div className="blk blk--diagram">
+          <DiagramView block={block} />
+        </div>
+      )
+    case 'math':
+      return (
+        <div className="blk blk--math">
+          <MathView block={block} />
         </div>
       )
     case 'timeline':
@@ -649,9 +664,14 @@ export function DocPages({ doc, settings, brand, onChange, onPageCount }: Props)
   const vars = paperVars(settings, brand, 'body')
   const theme = themeFor(settings, 'body')
   const measureRef = useRef<HTMLDivElement>(null)
+  const pagesRef = useRef<HTMLDivElement>(null)
   // page → column → flow-item indices
   const [pages, setPages] = useState<number[][][]>([])
   const [fontsReady, setFontsReady] = useState(false)
+  // Safety reserve absorbs sub-pixel drift between measurement and print.
+  // It starts tight so pages look full, then grows only if a page overflows.
+  const [reserve, setReserve] = useState(56)
+  const overflowChecks = useRef(0)
   // The textbook layout places body content in two measured columns, so one
   // page holds roughly twice the single-column height.
   const columns = settings.layout === 'two-column-textbook' ? 2 : 1
@@ -697,6 +717,11 @@ export function DocPages({ doc, settings, brand, onChange, onPageCount }: Props)
     }
   }, [])
 
+  useEffect(() => {
+    overflowChecks.current = 0
+    setReserve(56)
+  }, [settings.layout, settings.fontPairing, settings.headerStyle, settings.themeId, doc.sections.length])
+
   useLayoutEffect(() => {
     const root = measureRef.current
     if (!root) return
@@ -706,7 +731,7 @@ export function DocPages({ doc, settings, brand, onChange, onPageCount }: Props)
     const sticky = items.map((item) => item.sticky)
     // Two columns are packed as separate measured columns and then paired onto
     // pages, so neither column can ever outgrow the A4 body height.
-    const columnCapacity = CONTENT_HEIGHT - (columns === 2 ? 80 : 80)
+    const columnCapacity = CONTENT_HEIGHT - reserve
     const columnsOfItems = paginate(measured, columnCapacity, sticky, FLOW_GAP)
     const grouped: number[][][] =
       columns === 2
@@ -726,7 +751,21 @@ export function DocPages({ doc, settings, brand, onChange, onPageCount }: Props)
     brand.primary,
     brand.accent,
     fontsReady,
+    reserve,
   ])
+
+  // Post-render guard: if a real page's content ran past the body box (new
+  // diagrams, wide tables, fallback fonts), tighten the budget and repaginate.
+  useLayoutEffect(() => {
+    const root = pagesRef.current
+    if (!root || !pages.length) return
+    const bodies = Array.from(root.querySelectorAll<HTMLElement>('.paper-body'))
+    const overflowing = bodies.some((body) => body.scrollHeight > body.clientHeight + 2)
+    if (overflowing && overflowChecks.current < 4) {
+      overflowChecks.current += 1
+      setReserve((value) => Math.min(value + 24, CONTENT_HEIGHT - 220))
+    }
+  }, [pages, reserve, settings.layout])
 
   const renderItem = (item: FlowItem) => {
     if (item.kind === 'section') {
@@ -797,7 +836,7 @@ export function DocPages({ doc, settings, brand, onChange, onPageCount }: Props)
   }, [pages.length, onPageCount])
 
   return (
-    <div className="doc-pages">
+    <div className="doc-pages" ref={pagesRef}>
       <div className="paper-measure" aria-hidden="true">
         <div
           ref={measureRef}

@@ -21,12 +21,17 @@ const ANTHROPIC_MESSAGES = 'https://api.anthropic.com/v1/messages'
 const ANTHROPIC_MODELS = 'https://api.anthropic.com/v1/models'
 const ANTHROPIC_VERSION = '2023-06-01'
 
-/** Hard ceiling for one generation, retries and fallbacks included. */
-export const REQUEST_TIMEOUT_MS = 45_000
+/** A stream that sends nothing for this long is treated as dead. */
+export const STREAM_IDLE_TIMEOUT_MS = 30_000
+/** Absolute ceiling for one streaming request. A working stream runs to the end. */
+export const STREAM_MAX_MS = 150_000
 /** Retries after the first attempt, per model, for 429 / 503. */
 const MAX_RETRIES = 3
 const RETRY_DELAY_MS = 2_000
 const MAX_MODEL_ATTEMPTS = 3
+
+/** Receives the number of characters streamed so far, for live button labels. */
+export type StreamProgress = (chars: number) => void
 
 function anthropicHeaders(apiKey: string): Record<string, string> {
   return {
@@ -38,11 +43,16 @@ function anthropicHeaders(apiKey: string): Record<string, string> {
   }
 }
 
-function timeoutError(): AiError {
-  return new AiError(
-    `The request timed out after ${Math.round(REQUEST_TIMEOUT_MS / 1000)} seconds.`,
-    'Pick a Flash model, shorten the source, or turn on Direct Mode (No AI) for an instant result.',
-  )
+function timeoutError(reason: 'idle' | 'cap' = 'cap'): AiError {
+  return reason === 'idle'
+    ? new AiError(
+        `The model stopped sending data for ${Math.round(STREAM_IDLE_TIMEOUT_MS / 1000)} seconds.`,
+        'Pick a Flash model, shorten the source, or use Direct Mode (No AI) for an instant result.',
+      )
+    : new AiError(
+        `The request hit its ${Math.round(STREAM_MAX_MS / 1000)}-second ceiling.`,
+        'Pick a Flash model, shorten the source, or use Direct Mode (No AI) for an instant result.',
+      )
 }
 
 function shortDetail(text: string): string {
@@ -114,22 +124,8 @@ async function failureMessage(response: Response, provider: ProviderId): Promise
   return new AiError(`${label} request failed (HTTP ${status})${suffix}`, undefined, { status })
 }
 
-function wait(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    if (signal.aborted) {
-      resolve()
-      return
-    }
-    const timer = window.setTimeout(() => {
-      signal.removeEventListener('abort', onAbort)
-      resolve()
-    }, ms)
-    const onAbort = () => {
-      window.clearTimeout(timer)
-      resolve()
-    }
-    signal.addEventListener('abort', onAbort, { once: true })
-  })
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
 function geminiText(data: Record<string, unknown>): string {
@@ -140,100 +136,222 @@ function geminiText(data: Record<string, unknown>): string {
   return (parts ?? []).map((part) => part.text ?? '').join('')
 }
 
+function geminiConfig(maxTokens: number, thinking: boolean): Record<string, unknown> {
+  const config: Record<string, unknown> = {
+    temperature: 0.5,
+    maxOutputTokens: maxTokens,
+    // Structured output: no prose wrapper, no markdown fences, much faster.
+    responseMimeType: 'application/json',
+  }
+  // Fast response mode — suppress extended thinking where the model allows it.
+  if (thinking) config.thinkingConfig = { thinkingBudget: 0 }
+  return config
+}
+
+function geminiPayload(system: string, user: string, maxTokens: number, thinking: boolean): string {
+  return JSON.stringify({
+    systemInstruction: { role: 'system', parts: [{ text: system }] },
+    contents: [{ role: 'user', parts: [{ text: user }] }],
+    generationConfig: geminiConfig(maxTokens, thinking),
+  })
+}
+
 /**
- * One network round trip. Throws typed AiError so the retry loop can decide
- * whether the failure is worth another attempt.
+ * Gemini SSE stream, called straight from the browser (no proxy in between).
+ * Progress is reported per chunk, a 30s idle watchdog resets on every chunk so
+ * a working stream is never cut, and the 150s cap is the only hard ceiling.
  */
-async function requestOnce(options: {
+async function streamGemini(options: {
+  apiKey: string
+  model: string
+  system: string
+  user: string
+  maxTokens: number
+  thinking: boolean
+  onProgress?: StreamProgress
+}): Promise<string> {
+  const url = `${GEMINI_BASE}/models/${encodeURIComponent(
+    options.model,
+  )}:streamGenerateContent?alt=sse&key=${encodeURIComponent(options.apiKey)}`
+  const controller = new AbortController()
+  let abortReason: 'idle' | 'cap' | null = null
+
+  const capTimer = window.setTimeout(() => {
+    abortReason = 'cap'
+    controller.abort()
+  }, STREAM_MAX_MS)
+
+  let idleTimer: number | undefined
+  const resetIdle = () => {
+    window.clearTimeout(idleTimer)
+    idleTimer = window.setTimeout(() => {
+      abortReason = 'idle'
+      controller.abort()
+    }, STREAM_IDLE_TIMEOUT_MS)
+  }
+
+  try {
+    resetIdle()
+    const send = (thinking: boolean) =>
+      fetch(url, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: { 'content-type': 'application/json' },
+        body: geminiPayload(options.system, options.user, options.maxTokens, thinking),
+      })
+
+    let response = await send(options.thinking)
+    // Older models reject thinkingConfig outright; the same call succeeds without it.
+    if (!response.ok && response.status === 400 && options.thinking) {
+      response = await send(false)
+    }
+    if (!response.ok) throw await failureMessage(response, 'gemini')
+    if (!response.body) throw new AiError('The provider opened no stream.', 'Try again, or switch model.')
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let text = ''
+    let blocked = ''
+
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      resetIdle()
+      // Raw CR only appears in SSE line endings, so normalising is safe.
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n')
+      let cut = buffer.indexOf('\n\n')
+      while (cut !== -1) {
+        const event = buffer.slice(0, cut)
+        buffer = buffer.slice(cut + 2)
+        for (const line of event.split('\n')) {
+          if (!line.startsWith('data:')) continue
+          const payload = line.slice(5).trim()
+          if (!payload || payload === '[DONE]') continue
+          let data: Record<string, unknown>
+          try {
+            data = JSON.parse(payload) as Record<string, unknown>
+          } catch {
+            continue
+          }
+          const chunk = geminiText(data)
+          if (chunk) {
+            text += chunk
+            options.onProgress?.(text.length)
+          }
+          const reason = (data.promptFeedback as { blockReason?: string } | undefined)?.blockReason
+          if (reason) blocked = reason
+          const finish = (data.candidates as { finishReason?: string }[] | undefined)?.[0]?.finishReason
+          if (finish === 'SAFETY' || finish === 'PROHIBITED_CONTENT') blocked = finish
+        }
+        cut = buffer.indexOf('\n\n')
+      }
+    }
+
+    if (!text.trim()) {
+      if (blocked) throw new AiError(`Gemini blocked the response (${blocked}).`, 'Adjust the source text and retry.')
+      throw new AiError('The model returned an empty response.', 'Try again, or switch to another model.')
+    }
+    return text
+  } catch (error) {
+    if (abortReason) throw timeoutError(abortReason)
+    if (error instanceof AiError) throw error
+    if (error instanceof DOMException && error.name === 'AbortError') throw timeoutError('cap')
+    throw new AiError(
+      'Could not reach the provider from this browser.',
+      'This is usually a network or CORS problem. Check your connection, then try again.',
+    )
+  } finally {
+    window.clearTimeout(idleTimer)
+    window.clearTimeout(capTimer)
+  }
+}
+
+/** Anthropic has no JSON streaming contract here, so one bounded round trip. */
+async function requestAnthropic(options: {
+  apiKey: string
+  model: string
+  system: string
+  user: string
+  maxTokens: number
+}): Promise<string> {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), STREAM_MAX_MS)
+  try {
+    const response = await fetch(ANTHROPIC_MESSAGES, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: anthropicHeaders(options.apiKey),
+      body: JSON.stringify({
+        model: options.model,
+        max_tokens: options.maxTokens,
+        temperature: 0.5,
+        system: options.system,
+        messages: [{ role: 'user', content: options.user }],
+      }),
+    })
+    if (!response.ok) throw await failureMessage(response, 'anthropic')
+    let data: Record<string, unknown>
+    try {
+      data = (await response.json()) as Record<string, unknown>
+    } catch {
+      if (controller.signal.aborted) throw timeoutError('cap')
+      throw new AiError('The provider returned an unreadable response.', 'Try again, or switch model.')
+    }
+    const content = data.content as { type?: string; text?: string }[] | undefined
+    const text = (content ?? []).map((part) => part.text ?? '').join('')
+    if (!text.trim()) {
+      throw new AiError('The model returned an empty response.', 'Try again, or switch to another model.')
+    }
+    return text
+  } catch (error) {
+    if (error instanceof AiError) throw error
+    if (controller.signal.aborted) throw timeoutError('cap')
+    throw new AiError(
+      'Could not reach the provider from this browser.',
+      'This is usually a network or CORS problem. Check your connection, then try again.',
+    )
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
+/** Dispatches one attempt; throws typed AiError so the retry loop can decide. */
+function requestOnce(options: {
   provider: ProviderId
   apiKey: string
   model: string
   system: string
   user: string
-  maxTokens?: number
-  signal: AbortSignal
-  allowThinkingConfig: boolean
+  maxTokens: number
+  thinking: boolean
+  onProgress?: StreamProgress
 }): Promise<string> {
-  const { provider, apiKey, model, system, user, signal } = options
-  let response: Response
-
-  try {
-    if (provider === 'gemini') {
-      const generationConfig: Record<string, unknown> = {
-        temperature: 0.6,
-        maxOutputTokens: options.maxTokens ?? 8192,
-        // Structured output: no prose wrapper, no markdown fences, much faster.
-        responseMimeType: 'application/json',
-      }
-      // Fast response mode — suppress extended thinking where the model allows it.
-      if (options.allowThinkingConfig) generationConfig.thinkingConfig = { thinkingBudget: 0 }
-
-      response = await fetch(`${GEMINI_BASE}/models/${encodeURIComponent(model)}:generateContent`, {
-        method: 'POST',
-        signal,
-        headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
-        body: JSON.stringify({
-          systemInstruction: { role: 'system', parts: [{ text: system }] },
-          contents: [{ role: 'user', parts: [{ text: user }] }],
-          generationConfig,
-        }),
-      })
-    } else {
-      response = await fetch(ANTHROPIC_MESSAGES, {
-        method: 'POST',
-        signal,
-        headers: anthropicHeaders(apiKey),
-        body: JSON.stringify({
-          model,
-          max_tokens: options.maxTokens ?? 8192,
-          temperature: 0.6,
-          system,
-          messages: [{ role: 'user', content: user }],
-        }),
-      })
-    }
-  } catch (error) {
-    if (signal.aborted) throw timeoutError()
-    if (error instanceof DOMException && error.name === 'AbortError') throw timeoutError()
-    throw new AiError(
-      'Could not reach the provider from this browser.',
-      'This is usually a network or CORS problem. Check your connection, then try again.',
-    )
+  if (options.provider === 'gemini') {
+    return streamGemini({
+      apiKey: options.apiKey,
+      model: options.model,
+      system: options.system,
+      user: options.user,
+      maxTokens: options.maxTokens,
+      thinking: options.thinking,
+      onProgress: options.onProgress,
+    })
   }
-
-  if (!response.ok) throw await failureMessage(response, provider)
-
-  let data: Record<string, unknown>
-  try {
-    data = (await response.json()) as Record<string, unknown>
-  } catch {
-    if (signal.aborted) throw timeoutError()
-    throw new AiError('The provider returned an unreadable response.', 'Try again, or switch model.')
-  }
-
-  let text = ''
-  if (provider === 'gemini') {
-    text = geminiText(data)
-    if (!text) {
-      const blocked = (data.promptFeedback as { blockReason?: string } | undefined)?.blockReason
-      if (blocked) throw new AiError(`Gemini blocked the response (${blocked}).`, 'Adjust the source text and retry.')
-    }
-  } else {
-    const content = data.content as { type?: string; text?: string }[] | undefined
-    text = (content ?? []).map((part) => part.text ?? '').join('')
-  }
-
-  if (!text.trim()) {
-    throw new AiError('The model returned an empty response.', 'Try again, or switch to another model.')
-  }
-  return text
+  return requestAnthropic({
+    apiKey: options.apiKey,
+    model: options.model,
+    system: options.system,
+    user: options.user,
+    maxTokens: options.maxTokens,
+  })
 }
 
 /**
- * Runs one request with a 45s ceiling, retries 429/503 three times with a 2s
- * backoff, then falls back through the next stable Flash models.
+ * Streams (Gemini) with a 30s idle guard and a 150s cap, retries 429/503 three
+ * times with a 2s backoff, then falls back through the next stable Flash models.
  */
-async function callModel(options: {
+export async function callModel(options: {
   provider: ProviderId
   apiKey: string
   model: string
@@ -241,6 +359,7 @@ async function callModel(options: {
   user: string
   maxTokens?: number
   fallbackModels?: string[]
+  onProgress?: StreamProgress
 }): Promise<string> {
   if (!options.apiKey.trim()) {
     throw new AiError('No API key saved for this provider.', 'Add your key in API Settings — it stays in this browser.')
@@ -257,56 +376,42 @@ async function callModel(options: {
     .filter((model, index, all) => Boolean(model) && all.indexOf(model) === index)
     .slice(0, MAX_MODEL_ATTEMPTS)
 
-  const controller = new AbortController()
-  const deadline = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   const tried: string[] = []
   let retries = 0
   let lastError: AiError | null = null
 
-  try {
-    for (const model of chain) {
-      tried.push(model)
-      // Some Gemini models reject thinkingConfig outright; start with it off for Flash.
-      let allowThinkingConfig =
-        options.provider === 'gemini' && /flash/i.test(model) && !/pro|thinking|learnlm|image|tts/i.test(model)
+  for (const model of chain) {
+    tried.push(model)
+    // Some Gemini models reject thinkingConfig outright; the stream retries without it.
+    const thinking =
+      options.provider === 'gemini' && /flash/i.test(model) && !/pro|thinking|learnlm|image|tts/i.test(model)
 
-      for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
-        try {
-          return await requestOnce({
-            provider: options.provider,
-            apiKey: options.apiKey,
-            model,
-            system: options.system,
-            user: options.user,
-            maxTokens: options.maxTokens,
-            signal: controller.signal,
-            allowThinkingConfig,
-          })
-        } catch (error) {
-          if (controller.signal.aborted) throw timeoutError()
-          const aiError =
-            error instanceof AiError
-              ? error
-              : new AiError(error instanceof Error ? error.message : 'Generation failed.')
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+      try {
+        return await requestOnce({
+          provider: options.provider,
+          apiKey: options.apiKey,
+          model,
+          system: options.system,
+          user: options.user,
+          maxTokens: options.maxTokens ?? 8192,
+          thinking,
+          onProgress: options.onProgress,
+        })
+      } catch (error) {
+        const aiError =
+          error instanceof AiError
+            ? error
+            : new AiError(error instanceof Error ? error.message : 'Generation failed.')
+        if (!aiError.retryable) throw aiError
 
-          // A model that refuses thinking settings still works without them.
-          if (aiError.status === 400 && allowThinkingConfig) {
-            allowThinkingConfig = false
-            continue
-          }
-          if (!aiError.retryable) throw aiError
-
-          lastError = aiError
-          if (attempt < MAX_RETRIES) {
-            retries += 1
-            await wait(RETRY_DELAY_MS, controller.signal)
-            if (controller.signal.aborted) throw timeoutError()
-          }
+        lastError = aiError
+        if (attempt < MAX_RETRIES) {
+          retries += 1
+          await wait(RETRY_DELAY_MS)
         }
       }
     }
-  } finally {
-    window.clearTimeout(deadline)
   }
 
   if (!lastError) {
@@ -319,6 +424,80 @@ async function callModel(options: {
     lastError.hint ?? 'Try again in a moment, switch to Flash-Lite, or turn on Direct Mode (No AI).',
     { status: lastError.status },
   )
+}
+
+/**
+ * Tiny "Reply OK" ping so a model can be verified in about two seconds.
+ * Returns the round-trip time in milliseconds.
+ */
+export async function testModel(provider: ProviderId, apiKey: string, model: string): Promise<number> {
+  const key = apiKey.trim()
+  const id = model.replace(/^models\//, '').trim()
+  if (!key) throw new AiError('Add an API key first.', 'The model list is read live from the provider.')
+  if (!id) throw new AiError('Choose a model first.', 'Refresh the list, then pick a Flash model.')
+
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), 15_000)
+  const started = performance.now()
+
+  try {
+    let response: Response
+    if (provider === 'gemini') {
+      const url = `${GEMINI_BASE}/models/${encodeURIComponent(id)}:generateContent?key=${encodeURIComponent(key)}`
+      const withThinking = JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: 'Reply OK' }] }],
+        generationConfig: {
+          maxOutputTokens: 16,
+          temperature: 0,
+          thinkingConfig: { thinkingBudget: 0 },
+        },
+      })
+      response = await fetch(url, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: { 'content-type': 'application/json' },
+        body: withThinking,
+      })
+      if (response.status === 400) {
+        response = await fetch(url, {
+          method: 'POST',
+          signal: controller.signal,
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: 'Reply OK' }] }],
+            generationConfig: { maxOutputTokens: 16, temperature: 0 },
+          }),
+        })
+      }
+    } else {
+      response = await fetch(ANTHROPIC_MESSAGES, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: anthropicHeaders(key),
+        body: JSON.stringify({
+          model: id,
+          max_tokens: 16,
+          temperature: 0,
+          messages: [{ role: 'user', content: 'Reply OK' }],
+        }),
+      })
+    }
+
+    if (!response.ok) throw await failureMessage(response, provider)
+    await response.text()
+    return Math.max(1, Math.round(performance.now() - started))
+  } catch (error) {
+    if (error instanceof AiError) throw error
+    if (controller.signal.aborted) {
+      throw new AiError('The test timed out after 15 seconds.', 'The model is not responding — pick a Flash model.')
+    }
+    throw new AiError(
+      'Could not reach the provider from this browser.',
+      'Check your connection, then test again.',
+    )
+  } finally {
+    window.clearTimeout(timer)
+  }
 }
 
 function parseJsonSlice(candidate: string): unknown | undefined {
@@ -398,7 +577,7 @@ export function extractJson(text: string): unknown {
 }
 
 /** Ordered fallbacks: next fastest stable models from the live catalog. */
-function fallbackModels(settings: AppSettings): string[] {
+export function fallbackModels(settings: AppSettings): string[] {
   const provider = settings.provider
   return settings.catalog[provider]
     .map((model) => model.id)
@@ -407,7 +586,12 @@ function fallbackModels(settings: AppSettings): string[] {
     .slice(0, MAX_MODEL_ATTEMPTS - 1)
 }
 
-export async function generateDoc(settings: AppSettings, source: string, brand: BrandPreset): Promise<PdfDoc> {
+export async function generateDoc(
+  settings: AppSettings,
+  source: string,
+  brand: BrandPreset,
+  onProgress?: StreamProgress,
+): Promise<PdfDoc> {
   const text = await callModel({
     provider: settings.provider,
     apiKey: settings.keys[settings.provider],
@@ -421,6 +605,7 @@ export async function generateDoc(settings: AppSettings, source: string, brand: 
       brand,
     }),
     fallbackModels: fallbackModels(settings),
+    onProgress,
   })
   const doc = normalizeDoc(extractJson(text))
   if (!doc.sections.length) {
@@ -429,7 +614,12 @@ export async function generateDoc(settings: AppSettings, source: string, brand: 
   return doc
 }
 
-export async function generateCarousel(settings: AppSettings, source: string, brand: BrandPreset): Promise<Carousel> {
+export async function generateCarousel(
+  settings: AppSettings,
+  source: string,
+  brand: BrandPreset,
+  onProgress?: StreamProgress,
+): Promise<Carousel> {
   const text = await callModel({
     provider: settings.provider,
     apiKey: settings.keys[settings.provider],
@@ -443,6 +633,7 @@ export async function generateCarousel(settings: AppSettings, source: string, br
     }),
     maxTokens: 4096,
     fallbackModels: fallbackModels(settings),
+    onProgress,
   })
   const carousel = normalizeCarousel(extractJson(text))
   if (!carousel.slides.length) {

@@ -5,6 +5,7 @@ interface Props {
   title: string
   labels: string[]
   values: number[]
+  values2?: number[]
   accent: string
   accent2: string
 }
@@ -224,12 +225,86 @@ function HorizontalChart({ labels, values, accent, accent2, max }: Props & { max
   )
 }
 
+function AreaChart({ labels, values, accent, max }: Props & { max: number }) {
+  const n = Math.max(values.length, 2)
+  const span = PLOT.right - PLOT.left
+  const points = values.map((value, index) => ({
+    x: PLOT.left + (span / (n - 1)) * index,
+    y: PLOT.bottom - (Math.max(value, 0) / max) * (PLOT.bottom - PLOT.top),
+  }))
+  const line = points.map((point) => `${point.x},${point.y}`).join(' ')
+  return (
+    <g>
+      <Grid max={max} />
+      <polygon
+        points={`${PLOT.left},${PLOT.bottom} ${line} ${PLOT.right},${PLOT.bottom}`}
+        fill={accent}
+        fillOpacity={0.2}
+      />
+      <polyline points={line} fill="none" stroke={accent} strokeWidth={2.4} strokeLinejoin="round" />
+      {points.map((point, index) => (
+        <circle key={index} cx={point.x} cy={point.y} r={3.6} fill={accent} />
+      ))}
+      {labels.map((label, index) => (
+        <text
+          key={label + index}
+          x={PLOT.left + (span / (n - 1)) * index}
+          y={PLOT.bottom + 16}
+          textAnchor="middle"
+          fontSize={9}
+          fill="currentColor"
+          fillOpacity={0.62}
+        >
+          {short(label, 11)}
+        </text>
+      ))}
+      <line x1={PLOT.left} x2={PLOT.right} y1={PLOT.bottom} y2={PLOT.bottom} stroke="currentColor" strokeOpacity={0.28} />
+    </g>
+  )
+}
+
+function CompareChart({ labels, values, values2, accent, accent2, max }: Props & { max: number }) {
+  const second = values2 && values2.length ? values2 : values.map((value, index) => Math.round(value * (index % 2 ? 0.72 : 0.86)))
+  const n = Math.max(values.length, 1)
+  const slot = (PLOT.right - PLOT.left) / n
+  const width = Math.min(26, slot * 0.28)
+  return (
+    <g>
+      <Grid max={max} />
+      {values.map((value, index) => {
+        const x = PLOT.left + slot * index + slot / 2
+        const h1 = Math.max((Math.max(value, 0) / max) * (PLOT.bottom - PLOT.top), 1)
+        const h2 = Math.max((Math.max(second[index] ?? 0, 0) / max) * (PLOT.bottom - PLOT.top), 1)
+        return (
+          <g key={index}>
+            <rect x={x - width - 2} y={PLOT.bottom - h1} width={width} height={h1} rx={3} fill={accent} fillOpacity={0.9} />
+            <rect x={x + 2} y={PLOT.bottom - h2} width={width} height={h2} rx={3} fill={accent2} fillOpacity={0.9} />
+            <text x={x} y={PLOT.bottom - Math.max(h1, h2) - 7} textAnchor="middle" fontSize={8.6} fontWeight={700} fill="currentColor">
+              {value} · {second[index] ?? 0}
+            </text>
+            <text x={x} y={PLOT.bottom + 16} textAnchor="middle" fontSize={9} fill="currentColor" fillOpacity={0.62}>
+              {short(labels[index] ?? '', 11)}
+            </text>
+          </g>
+        )
+      })}
+      <line x1={PLOT.left} x2={PLOT.right} y1={PLOT.bottom} y2={PLOT.bottom} stroke="currentColor" strokeOpacity={0.28} />
+      <g transform={`translate(${PLOT.left} ${PLOT.top - 12})`}>
+        <rect width={9} height={9} rx={2} fill={accent} />
+        <text x={13} y={8} fontSize={8.6} fill="currentColor" fillOpacity={0.7}>Series A</text>
+        <rect x={68} width={9} height={9} rx={2} fill={accent2} />
+        <text x={81} y={8} fontSize={8.6} fill="currentColor" fillOpacity={0.7}>Series B</text>
+      </g>
+    </g>
+  )
+}
+
 /** Crisp vector chart: scales with the page and rasterises cleanly at 2x. */
-export function ChartSvg({ chart, title, labels, values, accent, accent2 }: Props) {
+export function ChartSvg({ chart, title, labels, values, values2, accent, accent2 }: Props) {
   const safeValues = values.length ? values.map((v) => (Number.isFinite(v) ? v : 0)) : [1]
   const safeLabels = labels.length ? labels : safeValues.map((_, index) => `Item ${index + 1}`)
-  const max = niceMax(safeValues)
-  const props = { chart, title, labels: safeLabels, values: safeValues, accent, accent2 }
+  const max = niceMax([...safeValues, ...(values2 ?? [])])
+  const props = { chart, title, labels: safeLabels, values: safeValues, values2, accent, accent2 }
   return (
     <figure className="chart-block">
       {title ? <figcaption className="chart-block__title">{title}</figcaption> : null}
@@ -244,6 +319,8 @@ export function ChartSvg({ chart, title, labels, values, accent, accent2 }: Prop
         {chart === 'line' ? <LineChart {...props} max={max} /> : null}
         {chart === 'donut' ? <DonutChart {...props} /> : null}
         {chart === 'hcompare' ? <HorizontalChart {...props} max={max} /> : null}
+        {chart === 'area' ? <AreaChart {...props} max={max} /> : null}
+        {chart === 'compare' ? <CompareChart {...props} max={max} /> : null}
       </svg>
     </figure>
   )

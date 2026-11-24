@@ -5481,3 +5481,822 @@ a:hover {
 .paper-col > .flow-item {
   flex: 0 0 auto;
 }
+
+/* =========================================================================
+   V3 · Print engineering
+   Exact A4 geometry, 15 mm safe margins, hairline rules, print typography.
+   ========================================================================= */
+.doc-pages {
+  --paper-pad: 60px;
+}
+
+@media screen {
+  /* Lock the canvas so nothing can bleed past the right trim edge. */
+  .paper-page {
+    width: 794px;
+    height: 1123px;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+}
+
+.paper-head,
+.paper-body,
+.paper-foot,
+.paper-cols,
+.paper-col,
+.paper-flow,
+.flow-item,
+.blk,
+.blk--table,
+.blk-table,
+.mcq,
+.mcq__stem,
+.mcq__answer {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.paper-body {
+  padding: 0 var(--paper-pad, 60px);
+}
+
+.paper-head {
+  padding: 0 var(--paper-pad, 60px);
+}
+
+.paper-foot {
+  padding-left: var(--paper-pad, 60px);
+  padding-right: var(--paper-pad, 60px);
+  gap: 12px;
+}
+
+.paper-foot__left,
+.paper-foot__right {
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.paper-foot__title {
+  flex: 0 1 auto;
+  max-width: 250px;
+}
+
+.paper-foot__page {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* Tables and MCQ grids may never push past the right margin. */
+.blk-table {
+  width: 100%;
+}
+
+.blk-table table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.mcq__options {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.mcq__options li,
+.mcq__question,
+.mcq__answer-value,
+.mcq__why {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.chart-svg,
+.diagram-svg {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  color: var(--paper-ink);
+}
+
+.img-block__img {
+  max-width: 100%;
+}
+
+/* Publication typography: 10.5–11 pt body, 1.55 leading, tabular figures. */
+.paper-page {
+  font-size: 14.4px;
+  line-height: 1.55;
+  font-variant-numeric: tabular-nums lining-nums;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+}
+
+.blk-p__text {
+  font-size: 14.4px;
+  line-height: 1.58;
+  letter-spacing: 0.002em;
+}
+
+.blk-lead__text {
+  font-size: 15.6px;
+  line-height: 1.55;
+}
+
+.blk-list li {
+  line-height: 1.55;
+}
+
+.blk-table th,
+.blk-table td {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Inline key terms: a soft highlighter wash instead of a chunky grey pill. */
+.blk-p__text strong,
+.blk-lead__text strong,
+.blk-list strong,
+.mcq__question strong,
+.blk-terms__term strong {
+  background-color: transparent !important;
+  background-image: linear-gradient(transparent 58%, var(--paper-highlight) 58%, var(--paper-highlight) 94%, transparent 94%) !important;
+  padding: 0 1px;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* -------------------------------------------------------------------------
+   V3 · Diagrams, formula cards, hairline print blocks
+   ------------------------------------------------------------------------- */
+.blk--diagram,
+.blk--math {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.diagram-block {
+  margin: 0;
+  border: 1px solid var(--paper-line);
+  border-radius: 6px;
+  background: var(--paper-soft);
+  padding: 10px 12px 8px;
+}
+
+.diagram-block__title {
+  font-family: var(--font-head);
+  font-size: 9.4px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--paper-muted);
+  margin-bottom: 6px;
+}
+
+.diagram-block__cap {
+  margin-top: 6px;
+  font-size: 9px;
+  line-height: 1.4;
+  color: var(--paper-muted);
+  border-top: 1px solid var(--paper-line);
+  padding-top: 5px;
+}
+
+.diagram-svg text {
+  font-family: var(--font-body);
+}
+
+.math-block {
+  margin: 0;
+  border: 1px solid var(--paper-line);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  background: var(--paper-soft);
+  padding: 10px 14px 11px;
+  break-inside: avoid;
+}
+
+.math-block__title {
+  font-family: var(--font-head);
+  font-size: 9.4px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--paper-muted);
+  margin-bottom: 6px;
+}
+
+.math-block__expr {
+  padding: 2px 0 1px;
+  color: var(--paper-ink);
+  overflow-x: hidden;
+}
+
+.math-block__expr .katex {
+  font-size: 1.16em;
+}
+
+.math-sheet {
+  display: flex;
+  flex-direction: column;
+}
+
+.math-sheet__row {
+  display: grid;
+  grid-template-columns: minmax(88px, 0.36fr) 1fr;
+  gap: 10px;
+  align-items: baseline;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--paper-line);
+}
+
+.math-sheet__row:last-child {
+  border-bottom: 0;
+}
+
+.math-sheet__label {
+  font-size: 9.6px;
+  font-weight: 650;
+  color: var(--paper-muted);
+  line-height: 1.35;
+}
+
+.math-sheet__expr {
+  min-width: 0;
+  color: var(--paper-ink);
+  overflow-x: hidden;
+}
+
+.math-sheet__expr .katex {
+  font-size: 1.02em;
+}
+
+.math-block__note {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--paper-line);
+  font-size: 9.2px;
+  line-height: 1.45;
+  color: var(--paper-muted);
+}
+
+/* Tables: hairline rules instead of heavy web cards. */
+.blk-table {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+
+.blk-table table {
+  border-collapse: collapse;
+}
+
+.blk-table thead th {
+  background: var(--paper-soft) !important;
+  color: var(--paper-ink) !important;
+  border: 0 !important;
+  border-top: 1px solid var(--paper-ink) !important;
+  border-bottom: 1px solid var(--paper-ink) !important;
+  font-size: 9.6px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px 8px !important;
+}
+
+.blk-table tbody td {
+  border: 0 !important;
+  border-bottom: 1px solid var(--paper-line) !important;
+  padding: 6px 8px !important;
+  font-size: 11.4px;
+  vertical-align: top;
+}
+
+.blk-table tbody tr:last-child td {
+  border-bottom: 1px solid var(--paper-ink) !important;
+}
+
+.blk-table__cap {
+  font-size: 9.2px;
+  letter-spacing: 0.04em;
+  color: var(--paper-muted);
+}
+
+/* Callouts: restrained left rule, no chunky fill. */
+.callout {
+  border: 1px solid var(--paper-line) !important;
+  border-left: 3px solid var(--callout-accent, var(--brand)) !important;
+  border-radius: 3px !important;
+  background: color-mix(in srgb, var(--paper-soft) 78%, transparent) !important;
+  padding: 10px 12px !important;
+}
+
+/* Keep headings with their content in any print pipeline. */
+.sec,
+.blk--sub,
+.mcq-head,
+.mcq__stem {
+  break-after: avoid;
+  page-break-after: avoid;
+  break-inside: avoid;
+}
+
+.sec + .flow-item,
+.blk--sub + .flow-item {
+  break-before: avoid;
+}
+
+/* -------------------------------------------------------------------------
+   V3 · Vector print pipeline — one A4 sheet per page, zero trim bleed
+   ------------------------------------------------------------------------- */
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  .studio-tabs,
+  .vs-tabs,
+  .preview-toolbar {
+    display: none !important;
+  }
+
+  .paper-page {
+    width: 210mm !important;
+    height: 297mm !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    break-before: page;
+    page-break-before: always;
+    background-color: var(--paper-bg) !important;
+    color: var(--paper-ink) !important;
+  }
+
+  .paper-page:first-of-type {
+    break-before: auto;
+    page-break-before: auto;
+  }
+
+  .paper-page *,
+  .diagram-svg,
+  .chart-svg {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .paper-head,
+  .paper-body,
+  .paper-foot {
+    padding-left: var(--paper-pad, 60px) !important;
+    padding-right: var(--paper-pad, 60px) !important;
+  }
+
+  .diagram-block,
+  .math-block,
+  .callout,
+  .blk-table,
+  .blk--table,
+  .mcq,
+  .chart-block,
+  .img-block,
+  .blk--image,
+  .tl__item,
+  .blk-terms__row {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .blk-table thead {
+    display: table-header-group;
+  }
+
+  .blk-table tr,
+  .diagram-svg,
+  .chart-svg,
+  .img-block__img {
+    break-inside: avoid !important;
+  }
+
+  .sec,
+  .blk--sub,
+  .mcq-head {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  p,
+  li {
+    orphans: 3;
+    widows: 3;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   V3 · Right-pane tabs
+   ------------------------------------------------------------------------- */
+.studio-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid rgba(16, 24, 40, 0.07);
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(14px);
+}
+
+.studio-tab {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 9px;
+  padding: 7px 6px;
+  font-size: 10.6px;
+  font-weight: 650;
+  letter-spacing: 0.015em;
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+}
+
+.studio-tab:hover {
+  background: rgba(16, 24, 40, 0.04);
+  color: var(--ink);
+}
+
+.studio-tab.is-active {
+  background: #fff;
+  border-color: rgba(91, 108, 255, 0.32);
+  color: var(--brand-deep, var(--brand));
+  box-shadow: 0 6px 16px -14px rgba(16, 24, 40, 0.7);
+}
+
+.pane--right .pane__scroll {
+  padding-top: 12px;
+}
+
+/* -------------------------------------------------------------------------
+   V3 · Visual Studio
+   ------------------------------------------------------------------------- */
+.visual-studio {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.vs-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(16, 24, 40, 0.05);
+}
+
+.vs-tab {
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  padding: 6px 3px;
+  font-size: 10.2px;
+  font-weight: 650;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.vs-tab.is-active {
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 2px 8px -6px rgba(16, 24, 40, 0.6);
+}
+
+.vs-status {
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--muted-2, var(--muted));
+  border-left: 2px solid rgba(91, 108, 255, 0.4);
+  padding-left: 8px;
+}
+
+.vs-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.vs-actions .btn {
+  flex: 1 1 auto;
+}
+
+.vs-preview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(16, 24, 40, 0.07);
+}
+
+.vs-preview {
+  --paper-bg: #ffffff;
+  --paper-ink: #101828;
+  --paper-muted: #667085;
+  --paper-soft: #f6f7fb;
+  --paper-line: #e4e7ec;
+  --paper-highlight: #fef3c7;
+  --brand: #3b5bdb;
+  --accent: #f59e0b;
+  border: 1px solid rgba(16, 24, 40, 0.12);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--paper-ink);
+  padding: 10px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.vs-preview .diagram-block,
+.vs-preview .math-block,
+.vs-preview .chart-block {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.vs-preview .chart-block__title,
+.vs-preview .diagram-block__title {
+  font-size: 9px;
+}
+
+.vs-preview .diagram-block__cap,
+.vs-preview .math-block__note {
+  font-size: 8.6px;
+}
+
+.vs-preview .katex {
+  font-size: 1em;
+}
+
+.vs-preview .math-sheet__row {
+  grid-template-columns: 82px 1fr;
+  gap: 6px;
+  padding: 3px 0;
+}
+
+.vs-preview .math-sheet__label {
+  font-size: 8.8px;
+}
+
+.vs-edit,
+.vs-insert {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.vs-insert {
+  padding-top: 9px;
+  border-top: 1px solid rgba(16, 24, 40, 0.07);
+}
+
+.vs-empty {
+  border: 1px dashed rgba(16, 24, 40, 0.14);
+  border-radius: 12px;
+  padding: 16px 14px 14px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.vs-empty__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: rgba(91, 108, 255, 0.1);
+  color: var(--brand);
+  font-size: 17px;
+  margin-bottom: 8px;
+}
+
+.vs-empty__hint {
+  margin-top: 10px;
+  font-size: 9.6px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted-2, var(--muted));
+}
+
+.vs-quick {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.vs-quick__item {
+  border: 1px solid rgba(16, 24, 40, 0.1);
+  background: #fff;
+  border-radius: 8px;
+  padding: 6px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink-2);
+  cursor: pointer;
+  text-align: left;
+}
+
+.vs-quick__item:hover {
+  border-color: rgba(91, 108, 255, 0.45);
+  color: var(--brand-deep, var(--brand));
+}
+
+/* -------------------------------------------------------------------------
+   V3 · Smart suggestions
+   ------------------------------------------------------------------------- */
+.suggest-box {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.sb-chevron {
+  display: inline-flex;
+  transition: transform 0.18s ease;
+}
+
+.sb-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+.sb-context {
+  font-size: 10.6px;
+  line-height: 1.5;
+  color: var(--muted);
+  background: rgba(91, 108, 255, 0.055);
+  border-radius: 9px;
+  padding: 8px 10px;
+}
+
+.sb-undo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 10.4px;
+  color: var(--muted);
+  background: rgba(15, 118, 110, 0.09);
+  border: 1px solid rgba(15, 118, 110, 0.22);
+  border-radius: 9px;
+  padding: 7px 10px;
+}
+
+.sb-undo strong {
+  color: var(--ink-2);
+  font-weight: 650;
+}
+
+.sb-undo__btn {
+  border: 0;
+  background: transparent;
+  color: var(--brand-deep, var(--brand));
+  font-weight: 700;
+  font-size: 10.6px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.sb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sb-card {
+  border: 1px solid rgba(16, 24, 40, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 11px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  border-left: 3px solid rgba(91, 108, 255, 0.6);
+}
+
+.sb-card--exam {
+  border-left-color: #d97706;
+}
+
+.sb-card--layout {
+  border-left-color: #0f766e;
+}
+
+.sb-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sb-card__cat {
+  font-size: 8.6px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--brand-deep, var(--brand));
+}
+
+.sb-card--exam .sb-card__cat {
+  color: #9a4a06;
+}
+
+.sb-card--layout .sb-card__cat {
+  color: #0f766e;
+}
+
+.sb-card__section {
+  font-size: 9.4px;
+  color: var(--muted);
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-card__title {
+  font-size: 12.1px;
+  line-height: 1.35;
+  font-weight: 650;
+  color: var(--ink);
+  letter-spacing: -0.005em;
+}
+
+.sb-card__detail {
+  font-size: 10.6px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.sb-empty {
+  font-size: 10.8px;
+  line-height: 1.55;
+  color: var(--muted);
+  border: 1px dashed rgba(16, 24, 40, 0.13);
+  border-radius: 10px;
+  padding: 12px;
+  text-align: center;
+}
+
+/* Neutralise the earlier forced break-after: only break-before is used, so no
+   browser can emit a leading blank sheet. */
+@media print {
+  .paper-page,
+  .paper-page:last-child {
+    break-after: auto !important;
+    page-break-after: auto !important;
+  }
+}
+
+/* AI error banner with the one-click offline fallback */
+.error-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.error-box__fix {
+  border: 1px solid rgba(180, 35, 43, 0.28);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--danger);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.error-box__fix:hover {
+  background: #fff;
+  border-color: rgba(180, 35, 43, 0.5);
+}

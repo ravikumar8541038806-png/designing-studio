@@ -16,6 +16,8 @@ export function SourcePanel({
   onExtractPdf,
   extracting,
   extracted,
+  progress,
+  onUseDirectMode,
 }: {
   mode: StudioTab
   source: string
@@ -29,6 +31,9 @@ export function SourcePanel({
   onExtractPdf: (file: File) => void
   extracting: { page: number; total: number } | null
   extracted: string | null
+  /** Characters streamed so far, shown live on the generate button. */
+  progress?: number | null
+  onUseDirectMode?: () => void
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const provider = providerPreset(settings.provider)
@@ -154,7 +159,13 @@ export function SourcePanel({
           onClick={onGenerate}
           disabled={generating || !source.trim() || (!direct && !hasKey)}
         >
-          {generating ? (direct ? 'Rendering…' : 'Structuring…') : actionLabel}
+          {generating
+            ? direct
+              ? 'Rendering…'
+              : progress
+                ? `${mode === 'pdf' ? 'Structuring' : 'Writing'}… ${progress.toLocaleString()} chars received`
+                : 'Connecting…'
+            : actionLabel}
         </Button>
         {direct ? (
           <div className="generate-meta">
@@ -179,7 +190,16 @@ export function SourcePanel({
         )}
       </div>
 
-      {error ? <p className="inline-error inline-error--box">{error}</p> : null}
+      {error ? (
+        <div className="inline-error inline-error--box error-box">
+          <span>{error}</span>
+          {onUseDirectMode ? (
+            <button type="button" className="error-box__fix" onClick={onUseDirectMode}>
+              Use Direct Mode Instantly
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   )
 }

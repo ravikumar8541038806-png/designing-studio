@@ -292,17 +292,22 @@ export function DesignPane({
         <div className="export-block">
           <div className="export-stats">
             <span>{pageCount} A4 pages</span>
-            <span>Full-bleed theme</span>
+            <span>Vector text</span>
           </div>
-          <Button variant="primary" icon="download" full onClick={onExportPdf} disabled={Boolean(busy)}>
-            {busy ?? 'Download print-ready PDF'}
+          <Button variant="primary" icon="print" full onClick={onPrint} disabled={Boolean(busy)}>
+            {busy ?? 'Export vector PDF'}
           </Button>
-          <Button variant="ghost" icon="print" full onClick={onPrint} disabled={Boolean(busy)}>
-            Print / vector PDF
+          <p className="export-note export-note--strong">
+            Opens the print dialog. Choose <strong>Save as PDF</strong>, paper <strong>A4</strong>, margins{' '}
+            <strong>None</strong>, background graphics <strong>on</strong>. Text stays selectable and every
+            diagram, chart and table edge stays vector-sharp.
+          </p>
+          <Button variant="ghost" icon="download" full onClick={onExportPdf} disabled={Boolean(busy)}>
+            Raster PDF (fallback)
           </Button>
           <p className="export-note">
-            Page backgrounds, tables and callouts are captured with the page itself, so dark themes export
-            full-bleed instead of printing white.
+            The image-based 2× PDF renders even in browsers that block the print dialog. Use the vector
+            export above for client delivery.
           </p>
         </div>
       ) : (

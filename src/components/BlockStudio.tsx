@@ -22,6 +22,8 @@ const BLOCK_LABELS: Record<string, string> = {
   chart: 'Chart',
   timeline: 'Timeline',
   callout: 'Callout',
+  diagram: 'Diagram',
+  math: 'Formula',
 }
 
 const ICONS: CalloutIcon[] = ['spark', 'pin', 'bulb', 'alert', 'quote', 'check', 'book', 'shield']
@@ -69,7 +71,7 @@ export function BlockStudio({
   onChange: (doc: PdfDoc) => void
 }) {
   const entries = findBlocks(doc).filter((entry) =>
-    ['image', 'chart', 'timeline', 'callout'].includes(entry.block.type),
+    ['image', 'chart', 'timeline', 'callout', 'diagram', 'math'].includes(entry.block.type),
   )
   const [target, setTarget] = useState(doc.sections[doc.sections.length - 1]?.id ?? '')
   const [selectedId, setSelectedId] = useState<string | null>(entries[0]?.block.id ?? null)
@@ -140,15 +142,16 @@ export function BlockStudio({
         <ul className="bs-list">
           {entries.map((entry) => {
             const label =
-              entry.block.type === 'chart'
-                ? entry.block.title || 'Chart'
-                : entry.block.type === 'timeline'
-                  ? entry.block.title || 'Timeline'
-                  : entry.block.type === 'image'
-                    ? entry.block.caption || 'Image'
-                    : entry.block.type === 'callout'
-                      ? entry.block.title || 'Callout'
-                      : 'Block'
+              entry.block.type === 'chart' ||
+              entry.block.type === 'timeline' ||
+              entry.block.type === 'diagram' ||
+              entry.block.type === 'math'
+                ? entry.block.title || BLOCK_LABELS[entry.block.type]
+                : entry.block.type === 'image'
+                  ? entry.block.caption || 'Image'
+                  : entry.block.type === 'callout'
+                    ? entry.block.title || 'Callout'
+                    : 'Block'
             return (
               <li
                 key={entry.block.id}
@@ -236,7 +239,7 @@ export function BlockStudio({
             <input
               className="bs-range"
               type="range"
-              min={25}
+              min={30}
               max={100}
               step={5}
               value={block.width}
@@ -302,6 +305,21 @@ export function BlockStudio({
               }}
             />
           </Field>
+          {block.chart === 'compare' ? (
+            <Field label="Series B · optional, one value per row">
+              <TextInput
+                value={(block.values2 ?? []).join(', ')}
+                placeholder="e.g. 28, 34, 19"
+                onChange={(value) => {
+                  const values2 = value
+                    .split(/\s*[,|]\s*/)
+                    .map((entry) => Number(entry))
+                    .filter((entry) => Number.isFinite(entry))
+                  patchChart({ values2 })
+                }}
+              />
+            </Field>
+          ) : null}
           <ColorField
             label="Primary accent"
             value={block.accent}
@@ -390,6 +408,36 @@ export function BlockStudio({
           >
             Add event
           </Button>
+        </div>
+      ) : null}
+
+      {block?.type === 'diagram' ? (
+        <div className="bs-inspector">
+          <Field label="Figure title">
+            <TextInput value={block.title} onChange={(title) => patch({ ...block, title })} />
+          </Field>
+          <Field label="Caption">
+            <TextInput value={block.caption} onChange={(caption) => patch({ ...block, caption })} />
+          </Field>
+          <p className="bs-empty">
+            {block.nodes.length} labels · {block.diagram} diagram. Regenerate or relabel it in Visual
+            Studio.
+          </p>
+        </div>
+      ) : null}
+
+      {block?.type === 'math' ? (
+        <div className="bs-inspector">
+          <Field label="Title">
+            <TextInput value={block.title} onChange={(title) => patch({ ...block, title })} />
+          </Field>
+          <Field label="Note">
+            <TextInput value={block.note} onChange={(note) => patch({ ...block, note })} />
+          </Field>
+          <p className="bs-empty">
+            {block.layout === 'sheet' ? `${block.items.length} formulas in this sheet` : 'Single equation'}.
+            Edit the LaTeX in Visual Studio.
+          </p>
         </div>
       ) : null}
 

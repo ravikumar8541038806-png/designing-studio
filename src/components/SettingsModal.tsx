@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, Field, Modal, TextInput } from './ui'
-import { AiError, listModels, pickDefaultModel } from '../lib/ai'
+import { AiError, listModels, pickDefaultModel, testModel } from '../lib/ai'
 import { PROVIDERS, providerPreset } from '../theme/presets'
 import type { AppSettings, ProviderId } from '../types'
 
@@ -22,6 +22,8 @@ export function SettingsModal({
   const catalog = settings.catalog[provider]
   const [reveal, setReveal] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
   const [feedback, setFeedback] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
   const fetchedFor = useRef('')
 
@@ -58,7 +60,29 @@ export function SettingsModal({
   }
 
   const setModel = (value: string) => {
+    setTestResult(null)
     patch({ models: { ...settings.models, [provider]: value } })
+  }
+
+  /** Two-second ping: proves the model answers before a real generation waits. */
+  const runTest = async () => {
+    if (testing) return
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const ms = await testModel(provider, apiKey, currentModel)
+      setTestResult({ tone: 'ok', text: `✓ Ready (${(ms / 1000).toFixed(1)}s)` })
+    } catch (error) {
+      const text =
+        error instanceof AiError
+          ? `${error.message}${error.hint ? ` ${error.hint}` : ''}`
+          : error instanceof Error
+            ? error.message
+            : 'Test failed.'
+      setTestResult({ tone: 'error', text })
+    } finally {
+      setTesting(false)
+    }
   }
 
   const refreshModels = async () => {
@@ -186,7 +210,20 @@ export function SettingsModal({
           <Button variant="ghost" icon="refresh" onClick={refreshModels} disabled={refreshing || !apiKey.trim()}>
             {refreshing ? 'Loading…' : 'Refresh'}
           </Button>
+          <Button
+            variant="ghost"
+            onClick={runTest}
+            disabled={testing || !apiKey.trim() || !currentModel.trim()}
+            title="Send a tiny “Reply OK” ping and time the answer"
+          >
+            {testing ? 'Testing…' : 'Test'}
+          </Button>
         </div>
+        {testResult ? (
+          <p className={`inline-error${testResult.tone === 'ok' ? ' inline-error--ok' : ' inline-error--box'}`}>
+            {testResult.text}
+          </p>
+        ) : null}
         {known ? (
           <span className="model-note">{catalog.find((model) => model.id === currentModel)?.note ?? ''}</span>
         ) : null}

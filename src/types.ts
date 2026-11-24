@@ -74,7 +74,36 @@ export interface BrandPreset {
 export type CalloutKind = 'fact' | 'exam' | 'note' | 'tip' | 'warning' | 'quote' | 'summary'
 export type CalloutIcon = 'spark' | 'alert' | 'bulb' | 'pin' | 'quote' | 'check' | 'book' | 'shield'
 
-export type ChartKind = 'bar' | 'line' | 'donut' | 'hcompare'
+export type ChartKind = 'bar' | 'line' | 'donut' | 'hcompare' | 'area' | 'compare'
+
+export type DiagramKind = 'flow' | 'cycle' | 'mindmap' | 'labeled'
+
+export type DiagramShape = 'box' | 'pill' | 'ellipse' | 'diamond' | 'circle' | 'note'
+
+export interface DiagramNode {
+  id: string
+  label: string
+  detail?: string
+  shape?: DiagramShape
+  /** Optional absolute position in percent of the diagram canvas. */
+  x?: number
+  y?: number
+  w?: number
+  h?: number
+}
+
+export interface DiagramEdge {
+  from: string
+  to: string
+  label?: string
+  dashed?: boolean
+}
+
+export interface MathItem {
+  id: string
+  label: string
+  latex: string
+}
 
 export interface TimelineItem {
   id: string
@@ -117,6 +146,8 @@ export type DocBlock =
       title: string
       labels: string[]
       values: number[]
+      /** Optional second series, used by the comparison chart. */
+      values2?: number[]
       accent: string
       accent2: string
     }
@@ -126,6 +157,26 @@ export type DocBlock =
       title: string
       orientation: 'vertical' | 'horizontal'
       items: TimelineItem[]
+    }
+  | {
+      id: string
+      type: 'diagram'
+      diagram: DiagramKind
+      title: string
+      caption: string
+      nodes: DiagramNode[]
+      edges: DiagramEdge[]
+      accent: string
+    }
+  | {
+      id: string
+      type: 'math'
+      title: string
+      latex: string
+      note: string
+      /** Single display equation, or a multi-row cheat-sheet card. */
+      layout: 'card' | 'sheet'
+      items: MathItem[]
     }
 
 export interface DocSection {

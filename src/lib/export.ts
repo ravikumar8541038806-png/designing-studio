@@ -64,6 +64,34 @@ function rgbTuple(color: string): [number, number, number] {
   return [255, 255, 255]
 }
 
+/**
+ * Native vector export. The browser's print pipeline keeps text selectable and
+ * SVG/graphics sharp, which a canvas capture can never do. The print
+ * stylesheet turns the live A4 pages into one sheet per page, full bleed.
+ */
+export async function printVectorPdf(fileName: string, title?: string): Promise<void> {
+  await waitForFonts()
+  const previousTitle = document.title
+  document.title = title || fileName
+  document.body.classList.add('printing')
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  )
+
+  const cleanup = () => {
+    document.body.classList.remove('printing')
+    document.title = previousTitle
+    window.removeEventListener('afterprint', cleanup)
+  }
+  window.addEventListener('afterprint', cleanup)
+  try {
+    window.print()
+  } finally {
+    // afterprint does not fire in some embeds; restore regardless.
+    window.setTimeout(cleanup, 1500)
+  }
+}
+
 export async function exportPdf(
   pages: HTMLElement[],
   fileName: string,
