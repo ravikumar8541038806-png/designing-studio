@@ -105,13 +105,17 @@ Return JSON:
   "title": "short figure title",
   "caption": "Fig 1.1: one-line source or note",
   "diagram": "${kind}",
-  "nodes": [{"id":"n1","label":"max 5 words","detail":"optional 3 words","shape":"box|pill|ellipse|diamond|circle|note","x":0-100,"y":0-100,"w":percent,"h":percent}],
-  "edges": [{"from":"n1","to":"n2","label":"max 4 words, optional","dashed":false}]
+  "nodes": [{"id":"n1","label":"max 5 words","detail":"optional 3 words","shape":"box|pill|ellipse|diamond|circle|note","tone":"oxygenated|deoxygenated|tissue|highlight|neutral","side":"left|right|inside","badge":1,"x":0-100,"y":0-100,"w":percent,"h":percent}],
+  "edges": [{"from":"n1","to":"n2","label":"max 4 words, optional","dashed":false,"tone":"oxygenated|deoxygenated","curve":-20}]
 }
 Rules:
 - 4 to 10 nodes, every label a crisp anatomy/process term a student must learn.
-- ${kind === 'labeled' ? 'Place nodes like a textbook figure using x/y percentages (5-95) and w/h in percent. Give the core structure shapes, not floating text.' : 'Do not use x/y; the layout engine lays these out.'}
-- ${kind === 'flow' ? 'A linear process: one arrow per consecutive step, 4-7 nodes.' : kind === 'cycle' ? 'A closed loop: the last edge returns to the first node.' : 'Central concept first, then 4-6 branches connected to it.'}
+- ${kind === 'schematic' ? `Draw a textbook anatomical schematic like a printed biology plate:
+  * Place every structure with x/y percentages (5-95) and w/h in percent, shaped as the real structure (pill = vessel, ellipse = chamber, box = apparatus part).
+  * Colour-code with "tone": red "oxygenated" for oxygen-rich vessels and chambers on that path, blue "deoxygenated" for oxygen-poor, "tissue" for organ tissue, "highlight" for valves/junctions, "neutral" for plain structure.
+  * Put each label in the outer gutter with "side":"left" or "right" and add a short "badge" key number where a numbered key helps.
+  * Trace the flow with edges that carry tone and a "curve" in SVG units (-40 to 40); do not label the arrows.` : kind === 'labeled' ? 'Place nodes like a textbook figure using x/y percentages (5-95) and w/h in percent. Give the core structure shapes, not floating text.' : 'Do not use x/y; the layout engine lays these out.'}
+- ${kind === 'flow' ? 'A linear process: one arrow per consecutive step, 4-7 nodes.' : kind === 'cycle' ? 'A closed loop: the last edge returns to the first node.' : kind === 'schematic' ? 'Keep structures inside the central stage: x between 18 and 82 so the outer gutter stays free for labels.' : 'Central concept first, then 4-6 branches connected to it.'}
 - Every label must be specific to the requested subject (e.g. "Left ventricle", "MPC repo rate", "Ray through F"), never generic.
 ${docContext()}`,
       2600,

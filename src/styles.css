@@ -6352,3 +6352,40 @@ a:hover {
 .vs-drop.is-dragging strong {
   color: var(--brand-deep, var(--brand));
 }
+
+/* Labelled-figure anchor controls (image plates) */
+.vs-anchors {
+  display: grid;
+  gap: 7px;
+  margin: 4px 0 10px;
+}
+
+.vs-anchor {
+  display: grid;
+  gap: 3px;
+  padding: 6px 8px;
+  border: 1px solid var(--line, #e3e6ef);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.vs-anchor__name {
+  font-size: 11px;
+  font-weight: 600;
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vs-anchor__controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.segmented--mini .segmented__item {
+  padding: 2px 7px;
+  font-size: 10.5px;
+}

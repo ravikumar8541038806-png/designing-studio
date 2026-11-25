@@ -76,15 +76,32 @@ export type CalloutIcon = 'spark' | 'alert' | 'bulb' | 'pin' | 'quote' | 'check'
 
 export type ChartKind = 'bar' | 'line' | 'donut' | 'hcompare' | 'area' | 'compare'
 
-export type DiagramKind = 'flow' | 'cycle' | 'mindmap' | 'labeled'
+export type DiagramKind = 'flow' | 'cycle' | 'mindmap' | 'labeled' | 'schematic'
 
 export type DiagramShape = 'box' | 'pill' | 'ellipse' | 'diamond' | 'circle' | 'note'
+
+/** Textbook colour coding: red = oxygenated, blue = deoxygenated, etc. */
+export type DiagramTone = 'oxygenated' | 'deoxygenated' | 'tissue' | 'highlight' | 'neutral'
+
+/** Where a label sits relative to the artwork. */
+export type DiagramSide = 'inside' | 'left' | 'right'
 
 export interface DiagramNode {
   id: string
   label: string
   detail?: string
   shape?: DiagramShape
+  /** Scientific schematic colour role; ignored by process diagrams. */
+  tone?: DiagramTone
+  /** left/right place the label outside the art with a leader line. */
+  side?: DiagramSide
+  /** Small circled key number (1, 2, 3 …) printed beside the label. */
+  badge?: number
+  /** Rotation in degrees, for arched vessels. */
+  rotate?: number
+  /** Anchor point (percent of the plate artwork) that a leader line starts from. */
+  anchorX?: number
+  anchorY?: number
   /** Optional absolute position in percent of the diagram canvas. */
   x?: number
   y?: number
@@ -97,6 +114,11 @@ export interface DiagramEdge {
   to: string
   label?: string
   dashed?: boolean
+  /** Trace colour for blood/fluid flow arrows. */
+  tone?: DiagramTone
+  /** Sideways bend of a flow arrow, in SVG units (negative bends the other way). */
+  curve?: number
+  width?: number
 }
 
 export interface MathItem {
@@ -167,6 +189,12 @@ export type DocBlock =
       nodes: DiagramNode[]
       edges: DiagramEdge[]
       accent: string
+      /** Named anatomical artwork drawn behind the labels (e.g. 'heart'). */
+      plate?: string
+      /** Uploaded or AI-generated illustration used as the figure artwork. */
+      plateImage?: string
+      /** height / width of plateImage, so the labels line up with the picture. */
+      plateAspect?: number
     }
   | {
       id: string

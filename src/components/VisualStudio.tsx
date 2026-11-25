@@ -4,7 +4,7 @@ import { DiagramView } from '../render/diagram'
 import { ChartSvg } from '../render/charts'
 import { MathView } from '../render/math'
 import { CHART_KINDS, createImageBlock } from '../lib/blocks'
-import { DIAGRAM_KINDS } from '../lib/diagrams'
+import { DIAGRAM_KINDS, labeledFigureBlock } from '../lib/diagrams'
 import {
   chartFromSeries,
   generateAiImage,
@@ -19,6 +19,7 @@ import type {
   AppSettings,
   ChartKind,
   DiagramKind,
+  DiagramNode,
   DocBlock,
   PdfDoc,
 } from '../types'
@@ -56,7 +57,7 @@ export function VisualStudio({
 }) {
   const [tab, setTab] = useState<StudioTab>('diagram')
   const [prompt, setPrompt] = useState('')
-  const [kind, setKind] = useState<DiagramKind>('flow')
+  const [kind, setKind] = useState<DiagramKind>('schematic')
   const [chartKind, setChartKind] = useState<ChartKind>('bar')
   const [formulaLayout, setFormulaLayout] = useState<'card' | 'sheet'>('card')
   const [preview, setPreview] = useState<DocBlock | null>(null)
@@ -67,6 +68,7 @@ export function VisualStudio({
   const [imageWidth, setImageWidth] = useState(80)
   const [imageAlign, setImageAlign] = useState<'left' | 'center' | 'right'>('center')
   const [dragging, setDragging] = useState(false)
+  const [imageAspect, setImageAspect] = useState(0.78)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const target = doc.sections.some((section) => section.id === sectionId)
@@ -81,6 +83,7 @@ export function VisualStudio({
     try {
       const url = await readImageFile(file)
       const name = file.name.replace(/\.[a-z0-9]+$/i, '').trim()
+      setImageAspect(await measureAspect(url))
       setPreview({
         ...(createImageBlock() as ImageBlock),
         url,
@@ -124,6 +127,7 @@ export function VisualStudio({
       setImageBusy(true)
       try {
         const url = await generateAiImage(settings, brief)
+        setImageAspect(await measureAspect(url))
         setPreview({
           ...(createImageBlock() as ImageBlock),
           url,
@@ -168,6 +172,22 @@ export function VisualStudio({
 
   const patchPreview = (next: DocBlock) => setPreview(next)
 
+  const patchNode = (nodeId: string, next: Partial<DiagramNode>) => {
+    if (!preview || preview.type !== 'diagram') return
+    setPreview({
+      ...preview,
+      nodes: preview.nodes.map((node) => (node.id === nodeId ? { ...node, ...next } : node)),
+    })
+  }
+
+  /** Turns the current image into a labelled figure with editable anchors. */
+  const labelFigure = () => {
+    if (!preview || preview.type !== 'image' || !preview.url) return
+    setPreview(labeledFigureBlock(preview.url, imageAspect, preview.caption))
+    setTab('diagram')
+    notify('Figure ready — rename the labels and drag their positions', 'success')
+  }
+
   const insert = () => {
     if (!preview) return
     onInsert(preview, target)
@@ -207,7 +227,7 @@ export function VisualStudio({
         <>
           {tab === 'diagram' ? (
             <div className="bs-chips">
-              {DIAGRAM_KINDS.filter((entry) => entry.id !== 'labeled').map((entry) => (
+              {DIAGRAM_KINDS.map((entry) => (
                 <button
                   key={entry.id}
                   type="button"
@@ -327,6 +347,11 @@ export function VisualStudio({
             <strong>Drop an image here, or press Ctrl+V</strong>
             <span>Paste from the clipboard, drag a file in, or click to browse</span>
           </div>
+          {preview?.type === 'image' && preview.url ? (
+            <Button icon="image" full onClick={labelFigure}>
+              Use as labelled figure
+            </Button>
+          ) : null}
         </>
       )}
 
@@ -374,8 +399,8 @@ export function VisualStudio({
                 <label className="bs-field">
                   <span className="bs-field__label">Labels · one per line</span>
                   <TextArea
-                    rows={Math.min(9, Math.max(4, preview.nodes.length))}
-                    value={preview.nodes.map((node) => node.label).join('\n')}
+                    rows={Math.min(10, Math.max(4, preview.nodes.length))}
+                    value={preview.nodes.map((node) => node.label.replace(/\s*\n\s*/g, ' — ')).join('\n')}
                     onChange={(value) => {
                       const labels = value.split('\n')
                       patchPreview({
@@ -388,6 +413,48 @@ export function VisualStudio({
                     }}
                   />
                 </label>
+                {preview.plateImage ? (
+                  <div className="vs-anchors">
+                    <SectionLabel>Label anchors</SectionLabel>
+                    {preview.nodes.map((node, index) => (
+                      <div className="vs-anchor" key={node.id}>
+                        <span className="vs-anchor__name">{node.label || `Label ${index + 1}`}</span>
+                        <div className="vs-anchor__controls">
+                          <input
+                            className="bs-range"
+                            type="range"
+                            min={4}
+                            max={96}
+                            value={node.anchorX ?? 50}
+                            aria-label={`${node.label} horizontal position`}
+                            onChange={(event) => patchNode(node.id, { anchorX: Number(event.target.value) })}
+                          />
+                          <input
+                            className="bs-range"
+                            type="range"
+                            min={4}
+                            max={96}
+                            value={node.anchorY ?? 50}
+                            aria-label={`${node.label} vertical position`}
+                            onChange={(event) => patchNode(node.id, { anchorY: Number(event.target.value) })}
+                          />
+                          <div className="segmented segmented--mini">
+                            {(['left', 'right'] as const).map((side) => (
+                              <button
+                                key={side}
+                                type="button"
+                                className={`segmented__item${(node.side ?? 'left') === side ? ' is-active' : ''}`}
+                                onClick={() => patchNode(node.id, { side })}
+                              >
+                                {side === 'left' ? 'L' : 'R'}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 <label className="bs-field">
                   <span className="bs-field__label">Caption</span>
                   <TextInput
@@ -566,7 +633,7 @@ export function VisualStudio({
           <span className="vs-empty__mark">{tab === 'diagram' ? '◈' : tab === 'chart' ? '▤' : tab === 'formula' ? '∑' : '▣'}</span>
           <p>
             {tab === 'diagram'
-              ? 'Process flowcharts, feedback cycles and mindmaps — crisp typographic SVG that matches the page theme. Anatomy and other illustrations live in the Images tab.'
+              ? 'Scientific schematics (colour-coded anatomy with leader-line labels and traced pathways), flowcharts, cycles and mindmaps — crisp SVG that matches the page theme.'
               : tab === 'chart'
                 ? 'Bar, line, pie, area and comparison charts with editable data.'
                 : tab === 'formula'
@@ -598,6 +665,8 @@ export function VisualStudio({
 function createQuickStart(tab: StudioTab): { label: string; prompt: string; kind?: DiagramKind }[] {
   if (tab === 'diagram') {
     return [
+      { label: 'Human heart schematic', prompt: 'Human heart with chambers, valves, vessels and the pathway of blood flow', kind: 'schematic' },
+      { label: 'Neuron', prompt: 'Neuron with dendrites, axon, myelin sheath and synapse', kind: 'schematic' },
       { label: 'Monetary transmission', prompt: 'Hawkish vs dovish RBI monetary transmission', kind: 'flow' },
       { label: 'Photosynthesis', prompt: 'Photosynthesis light and Calvin cycle', kind: 'cycle' },
       { label: 'Research method', prompt: 'Problem, hypothesis, method, data, conclusion', kind: 'flow' },
@@ -627,6 +696,16 @@ function createQuickStart(tab: StudioTab): { label: string; prompt: string; kind
     { label: 'Neuron', prompt: 'Neuron with dendrites, axon, myelin sheath and synapse' },
     { label: 'Leaf section', prompt: 'Cross-section of a leaf showing stomata, mesophyll and veins' },
   ]
+}
+
+/** height / width of an image URL, so labels can be placed on it accurately. */
+function measureAspect(url: string): Promise<number> {
+  return new Promise((resolve) => {
+    const image = new Image()
+    image.onload = () => resolve(image.height && image.width ? image.height / image.width : 0.78)
+    image.onerror = () => resolve(0.78)
+    image.src = url
+  })
 }
 
 /** Default figure caption, editable in the panel before inserting. */
