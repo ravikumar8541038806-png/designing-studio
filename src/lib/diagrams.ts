@@ -30,7 +30,7 @@ function bindPreset(preset: DiagramPreset, title: string): DocBlock {
     type: 'diagram',
     diagram: preset.kind,
     title: title || preset.name,
-    caption: 'Schematic — edit any label in place',
+    caption: 'Flowchart — edit any label in place',
     nodes,
     edges,
     accent: '',

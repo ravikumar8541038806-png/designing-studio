@@ -64,7 +64,7 @@ export function localDiagram(prompt: string, kind: DiagramKind, title?: string):
     type: 'diagram',
     diagram: kind,
     title: title || prompt.slice(0, 60) || 'Diagram',
-    caption: 'Schematic — edit any label in place',
+    caption: 'Flowchart — edit any label in place',
     nodes: labels.map((label) => ({ id: uid('n'), label: label.charAt(0).toUpperCase() + label.slice(1) })),
     edges: labels.slice(1).map((_, index) => ({ from: `local-${index}`, to: `local-${index + 1}` })),
     accent: '',
@@ -529,11 +529,87 @@ Rules: 1 to 6 items. Raw LaTeX only, no $ delimiters, no markdown. Use \\frac, \
 }
 
 /* ------------------------------------------------------------------------- */
-/* AI images (Gemini image models only)                                        */
+/* AI images — real Gemini image models and Imagen                            */
 /* ------------------------------------------------------------------------- */
 
-const IMAGE_MODELS = ['gemini-2.5-flash-image', 'gemini-2.0-flash-preview-image-generation']
+const IMAGE_BASE = 'https://generativelanguage.googleapis.com/v1beta'
 
+/** Appended to every brief so results read as textbook figures, not stock art. */
+export const IMAGE_STYLE_SUFFIX =
+  'clean, high-resolution, white background, educational textbook diagram with clear accurate labels'
+
+/** Gemini image chat models return inlineData; Imagen answers a :predict call. */
+const IMAGE_MODELS: { id: string; mode: 'chat' | 'predict' }[] = [
+  { id: 'gemini-2.5-flash-image', mode: 'chat' },
+  { id: 'gemini-2.0-flash-exp-image-generation', mode: 'chat' },
+  { id: 'gemini-2.0-flash-preview-image-generation', mode: 'chat' },
+  { id: 'imagen-3.0-generate-002', mode: 'predict' },
+  { id: 'imagen-3.0-generate-001', mode: 'predict' },
+]
+
+function imageFailure(status: number, body: string): string {
+  const text = body.replace(/\s+/g, ' ').trim()
+  try {
+    const parsed = JSON.parse(body) as { error?: { message?: string } }
+    if (parsed.error?.message) return `HTTP ${status} — ${parsed.error.message.slice(0, 180)}`
+  } catch {
+    /* Provider bodies are usually JSON, but plain text is fine too. */
+  }
+  return `HTTP ${status}${text ? ` — ${text.slice(0, 180)}` : ''}`
+}
+
+async function requestImage(
+  model: { id: string; mode: 'chat' | 'predict' },
+  apiKey: string,
+  prompt: string,
+  signal: AbortSignal,
+): Promise<string> {
+  const url =
+    model.mode === 'predict'
+      ? `${IMAGE_BASE}/models/${model.id}:predict`
+      : `${IMAGE_BASE}/models/${model.id}:generateContent`
+  const body =
+    model.mode === 'predict'
+      ? { instances: [{ prompt }], parameters: { sampleCount: 1 } }
+      : {
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
+        }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    signal,
+    headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    let detail = ''
+    try {
+      detail = await response.text()
+    } catch {
+      detail = ''
+    }
+    throw new Error(imageFailure(response.status, detail))
+  }
+
+  const data = (await response.json()) as {
+    candidates?: { content?: { parts?: { inlineData?: { mimeType?: string; data?: string } }[] } }[]
+    predictions?: { bytesBase64Encoded?: string; mimeType?: string }[]
+  }
+  const inline = data.candidates?.[0]?.content?.parts?.find((entry) => entry.inlineData?.data)?.inlineData
+  if (inline?.data) return `data:${inline.mimeType || 'image/png'};base64,${inline.data}`
+
+  const prediction = data.predictions?.[0]
+  if (prediction?.bytesBase64Encoded) {
+    return `data:${prediction.mimeType || 'image/png'};base64,${prediction.bytesBase64Encoded}`
+  }
+  throw new Error('no image in the response')
+}
+
+/**
+ * Generates a real raster illustration (Gemini image / Imagen) from the saved
+ * Gemini key and returns it as a data URL the preview and print view share.
+ */
 export async function generateAiImage(settings: AppSettings, prompt: string): Promise<string> {
   const apiKey = settings.keys.gemini?.trim()
   if (!apiKey) {
@@ -542,39 +618,36 @@ export async function generateAiImage(settings: AppSettings, prompt: string): Pr
       'Add your Gemini key in API Settings. Anthropic keys cannot generate images.',
     )
   }
-  let lastError = ''
-  for (const model of IMAGE_MODELS) {
-    try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
-          }),
-        },
-      )
-      if (!response.ok) {
-        lastError = `HTTP ${response.status}`
-        continue
+  const brief = prompt.trim()
+  if (!brief) throw new VisualError('Describe the image you want first.')
+
+  const styled = `${brief}. Render as a ${IMAGE_STYLE_SUFFIX}.`
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), 120_000)
+  const failures: string[] = []
+
+  try {
+    for (const model of IMAGE_MODELS) {
+      try {
+        return await requestImage(model, apiKey, styled, controller.signal)
+      } catch (error) {
+        if (controller.signal.aborted) break
+        failures.push(`${model.id}: ${error instanceof Error ? error.message : 'failed'}`)
       }
-      const data = (await response.json()) as {
-        candidates?: { content?: { parts?: { inlineData?: { mimeType?: string; data?: string } }[] } }[]
-      }
-      const part = data.candidates?.[0]?.content?.parts?.find((entry) => entry.inlineData?.data)
-      if (part?.inlineData?.data) {
-        return `data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`
-      }
-      lastError = 'no image returned'
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : 'network error'
     }
+  } finally {
+    window.clearTimeout(timer)
+  }
+
+  if (controller.signal.aborted) {
+    throw new VisualError(
+      'Image generation timed out after two minutes.',
+      'Try a shorter brief, then regenerate.',
+    )
   }
   throw new VisualError(
-    `Gemini could not generate that image${lastError ? ` (${lastError})` : ''}.`,
-    'Try a simpler prompt, or use the upload tab instead.',
+    `Gemini could not generate that image. ${failures.slice(0, 2).join(' · ')}`,
+    'Your key needs access to an image model (Gemini image or Imagen). Otherwise drop your own image in below.',
   )
 }
 

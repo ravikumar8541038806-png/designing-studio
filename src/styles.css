@@ -6300,3 +6300,55 @@ a:hover {
   background: #fff;
   border-color: rgba(180, 35, 43, 0.5);
 }
+
+/* V3 · visual studio image dropzone */
+.vs-hint {
+  font-size: 9.6px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.vs-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 14px 10px;
+  border-radius: 10px;
+  border: 1px dashed rgba(16, 24, 40, 0.22);
+  background: rgba(16, 24, 40, 0.02);
+  color: var(--muted);
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.vs-drop:hover,
+.vs-drop:focus-visible {
+  border-color: rgba(91, 108, 255, 0.5);
+  background: rgba(91, 108, 255, 0.05);
+  color: var(--brand-deep, var(--brand));
+  outline: none;
+}
+
+.vs-drop.is-dragging {
+  border-color: var(--brand);
+  border-style: solid;
+  background: rgba(91, 108, 255, 0.1);
+  color: var(--brand-deep, var(--brand));
+}
+
+.vs-drop strong {
+  font-size: 10.4px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.vs-drop span {
+  font-size: 9.4px;
+  line-height: 1.45;
+}
+
+.vs-drop.is-dragging strong {
+  color: var(--brand-deep, var(--brand));
+}

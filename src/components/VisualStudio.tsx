@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button, Icon, SectionLabel, TextArea, TextInput } from './ui'
 import { DiagramView } from '../render/diagram'
 import { ChartSvg } from '../render/charts'
@@ -13,6 +13,7 @@ import {
   generateFormula,
   hasAi,
   readImageFile,
+  VisualError,
 } from '../lib/visuals'
 import type {
   AppSettings,
@@ -39,7 +40,7 @@ const PROMPT_HINTS: Record<StudioTab, string> = {
   diagram: 'e.g. Human heart with labelled chambers and valves',
   chart: 'e.g. Freight costs by mode in 2025 (road 42, rail 27, air 18, sea 13)',
   formula: 'e.g. Macro formulas for RBI monetary policy',
-  image: 'e.g. Clean editorial illustration of a plant cell, flat vector style',
+  image: 'e.g. Plant cell with labelled nucleus, chloroplast and cell wall',
 }
 
 export function VisualStudio({
@@ -55,7 +56,7 @@ export function VisualStudio({
 }) {
   const [tab, setTab] = useState<StudioTab>('diagram')
   const [prompt, setPrompt] = useState('')
-  const [kind, setKind] = useState<DiagramKind>('labeled')
+  const [kind, setKind] = useState<DiagramKind>('flow')
   const [chartKind, setChartKind] = useState<ChartKind>('bar')
   const [formulaLayout, setFormulaLayout] = useState<'card' | 'sheet'>('card')
   const [preview, setPreview] = useState<DocBlock | null>(null)
@@ -65,10 +66,49 @@ export function VisualStudio({
   const [seriesDraft, setSeriesDraft] = useState('')
   const [imageWidth, setImageWidth] = useState(80)
   const [imageAlign, setImageAlign] = useState<'left' | 'center' | 'right'>('center')
+  const [dragging, setDragging] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
 
   const target = doc.sections.some((section) => section.id === sectionId)
     ? sectionId
     : doc.sections[doc.sections.length - 1]?.id ?? ''
+
+  const acceptFile = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      notify('That file is not an image.', 'error')
+      return
+    }
+    try {
+      const url = await readImageFile(file)
+      const name = file.name.replace(/\.[a-z0-9]+$/i, '').trim()
+      setPreview({
+        ...(createImageBlock() as ImageBlock),
+        url,
+        caption: figureCaption(name || 'Uploaded image'),
+        width: imageWidth,
+        align: imageAlign,
+      })
+      notify('Image ready — set the width and caption, then insert', 'success')
+    } catch {
+      notify('Could not read that image.', 'error')
+    }
+  }
+
+  // Ctrl+V anywhere in the Images tab drops a clipboard bitmap into the frame.
+  useEffect(() => {
+    if (tab !== 'image') return
+    const onPaste = (event: ClipboardEvent) => {
+      const items = Array.from(event.clipboardData?.items ?? [])
+      const file = items
+        .find((item) => item.kind === 'file' && item.type.startsWith('image/'))
+        ?.getAsFile()
+      if (!file) return
+      event.preventDefault()
+      void acceptFile(file)
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  })
 
   const run = async (mode: 'generate' | 'regenerate') => {
     const brief = prompt.trim()
@@ -84,10 +124,18 @@ export function VisualStudio({
       setImageBusy(true)
       try {
         const url = await generateAiImage(settings, brief)
-        setPreview({ ...(createImageBlock() as ImageBlock), url, caption: brief.slice(0, 90), width: imageWidth, align: imageAlign })
+        setPreview({
+          ...(createImageBlock() as ImageBlock),
+          url,
+          caption: figureCaption(brief),
+          width: imageWidth,
+          align: imageAlign,
+        })
         notify('Image generated', 'success')
       } catch (error) {
-        notify(error instanceof Error ? error.message : 'Image generation failed.', 'error')
+        const message = error instanceof Error ? error.message : 'Image generation failed.'
+        const hint = error instanceof VisualError ? error.hint : undefined
+        notify(hint ? `${message} ${hint}` : message, 'error')
       } finally {
         setImageBusy(false)
       }
@@ -99,7 +147,7 @@ export function VisualStudio({
       if (tab === 'diagram') {
         const result = await generateDiagram(settings, brief, kind)
         setPreview(result.block)
-        notify(result.local ? 'Generated an editable schematic (no AI used)' : 'Diagram generated', 'success')
+        notify(result.local ? 'Generated an editable flowchart (no AI used)' : 'Diagram generated', 'success')
       } else if (tab === 'chart') {
         const result = await generateChart(settings, brief, chartKind)
         if (result.block.type === 'chart') setSeriesDraft(result.block.labels.map((label, index) => `${label} | ${result.block.type === 'chart' ? result.block.values[index] ?? 0 : 0}`).join('\n'))
@@ -159,7 +207,7 @@ export function VisualStudio({
         <>
           {tab === 'diagram' ? (
             <div className="bs-chips">
-              {DIAGRAM_KINDS.map((entry) => (
+              {DIAGRAM_KINDS.filter((entry) => entry.id !== 'labeled').map((entry) => (
                 <button
                   key={entry.id}
                   type="button"
@@ -225,6 +273,9 @@ export function VisualStudio({
             <span className="bs-field__label">Describe the illustration</span>
             <TextArea rows={3} value={prompt} onChange={setPrompt} placeholder={PROMPT_HINTS.image} />
           </label>
+          <p className="vs-hint">
+            Drawn by a real Gemini image model — returns a high-resolution PNG that prints crisply in the PDF.
+          </p>
           <div className="vs-actions">
             <Button
               variant="primary"
@@ -233,7 +284,7 @@ export function VisualStudio({
               onClick={() => run('generate')}
               disabled={imageBusy}
             >
-              {imageBusy ? 'Rendering image…' : preview ? 'Regenerate' : 'Generate with Gemini'}
+              {imageBusy ? 'Rendering image…' : preview ? 'Regenerate' : 'Generate image'}
             </Button>
             {preview ? (
               <Button icon="refresh" onClick={() => run('regenerate')} disabled={imageBusy}>
@@ -241,33 +292,41 @@ export function VisualStudio({
               </Button>
             ) : null}
           </div>
-          <label className="bs-upload">
-            <span>
-              <Icon name="upload" size={13} /> Or upload from this device
-            </span>
+          <div
+            className={`vs-drop${dragging ? ' is-dragging' : ''}`}
+            role="button"
+            tabIndex={0}
+            onClick={() => fileRef.current?.click()}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') fileRef.current?.click()
+            }}
+            onDragOver={(event) => {
+              event.preventDefault()
+              setDragging(true)
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(event) => {
+              event.preventDefault()
+              setDragging(false)
+              const file = event.dataTransfer.files?.[0]
+              if (file) void acceptFile(file)
+            }}
+          >
             <input
+              ref={fileRef}
               type="file"
               accept="image/*"
-              onChange={async (event) => {
+              hidden
+              onChange={(event) => {
                 const file = event.target.files?.[0]
-                if (!file) return
-                try {
-                  const url = await readImageFile(file)
-                  setPreview({
-                    ...(createImageBlock() as ImageBlock),
-                    url,
-                    caption: file.name.replace(/\.[a-z0-9]+$/i, '').slice(0, 80),
-                    width: imageWidth,
-                    align: imageAlign,
-                  })
-                  notify('Image ready — adjust the frame, then insert', 'success')
-                } catch {
-                  notify('Could not read that image.', 'error')
-                }
+                if (file) void acceptFile(file)
                 event.target.value = ''
               }}
             />
-          </label>
+            <Icon name="upload" size={18} />
+            <strong>Drop an image here, or press Ctrl+V</strong>
+            <span>Paste from the clipboard, drag a file in, or click to browse</span>
+          </div>
         </>
       )}
 
@@ -507,12 +566,12 @@ export function VisualStudio({
           <span className="vs-empty__mark">{tab === 'diagram' ? '◈' : tab === 'chart' ? '▤' : tab === 'formula' ? '∑' : '▣'}</span>
           <p>
             {tab === 'diagram'
-              ? 'Labeled anatomy, ray diagrams and process loops — crisp SVG that matches the page theme.'
+              ? 'Process flowcharts, feedback cycles and mindmaps — crisp typographic SVG that matches the page theme. Anatomy and other illustrations live in the Images tab.'
               : tab === 'chart'
                 ? 'Bar, line, pie, area and comparison charts with editable data.'
                 : tab === 'formula'
                   ? 'KaTeX-rendered equations and cheat-sheet boxes.'
-                  : 'Generate an illustration with Gemini or upload your own.'}
+                  : 'Textbook illustrations from Gemini’s image models, or paste/drop your own.'}
           </p>
           <p className="vs-empty__hint">Start from a preset without typing:</p>
           <div className="vs-quick">
@@ -539,12 +598,11 @@ export function VisualStudio({
 function createQuickStart(tab: StudioTab): { label: string; prompt: string; kind?: DiagramKind }[] {
   if (tab === 'diagram') {
     return [
-      { label: 'Human heart', prompt: 'Human heart with chambers, valves and major vessels', kind: 'labeled' },
-      { label: 'Plant cell', prompt: 'Plant cell with organelles', kind: 'labeled' },
-      { label: 'Ray optics', prompt: 'Concave mirror ray diagram with object and image', kind: 'labeled' },
-      { label: 'Demand & supply', prompt: 'Demand and supply equilibrium with price and quantity axes', kind: 'labeled' },
       { label: 'Monetary transmission', prompt: 'Hawkish vs dovish RBI monetary transmission', kind: 'flow' },
       { label: 'Photosynthesis', prompt: 'Photosynthesis light and Calvin cycle', kind: 'cycle' },
+      { label: 'Research method', prompt: 'Problem, hypothesis, method, data, conclusion', kind: 'flow' },
+      { label: 'Supply chain', prompt: 'Supplier, factory, warehouse, distributor, retailer', kind: 'flow' },
+      { label: 'Revision map', prompt: 'Indian economy: agriculture, industry, services, external sector', kind: 'mindmap' },
     ]
   }
   if (tab === 'chart') {
@@ -562,5 +620,20 @@ function createQuickStart(tab: StudioTab): { label: string; prompt: string; kind
       { label: 'Biology sheet', prompt: 'Biology equations for photosynthesis and respiration' },
     ]
   }
-  return []
+  return [
+    { label: 'Human heart', prompt: 'Human heart with chambers, valves and major vessels' },
+    { label: 'Plant cell', prompt: 'Plant cell with nucleus, chloroplast, vacuole and cell wall' },
+    { label: 'Ray optics', prompt: 'Concave mirror ray diagram with principal axis, focus and image' },
+    { label: 'Neuron', prompt: 'Neuron with dendrites, axon, myelin sheath and synapse' },
+    { label: 'Leaf section', prompt: 'Cross-section of a leaf showing stomata, mesophyll and veins' },
+  ]
+}
+
+/** Default figure caption, editable in the panel before inserting. */
+function figureCaption(text: string): string {
+  const clean = text
+    .replace(/^fig(?:ure)?\.?\s*\d+(?:\.\d+)?\s*[:.–—-]\s*/i, '')
+    .trim()
+    .slice(0, 90)
+  return `Fig 1.1: ${clean || 'Untitled figure'}`
 }
