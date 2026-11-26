@@ -25,7 +25,16 @@ interface Props {
   brand: BrandPreset
   onChange: (doc: PdfDoc) => void
   onPageCount?: (count: number) => void
+  onMoveBlock?: (sectionId: string, blockId: string, direction: -1 | 1) => void
+  onDeleteBlock?: (sectionId: string, blockId: string) => void
+  onRegenerateImage?: (sectionId: string, blockId: string) => void
+  onUploadBlockImage?: (sectionId: string, blockId: string, file: File) => void
+  onCoverUpload?: (file: File) => void
+  onCoverGenerate?: () => void
+  coverBusy?: boolean
 }
+
+const TABLE_SLICE_ROWS = 7
 
 const ICON_PATHS: Record<CalloutIcon, ReactNode> = {
   spark: <path d="M8 1.8 9.3 6l4.2 1.3-4.2 1.3L8 12.8 6.7 8.6 2.5 7.3 6.7 6z" />,
@@ -105,7 +114,7 @@ function RunningHeader({
     <header className={`paper-head paper-head--${style}`}>
       <div className="paper-head__inner">
         <BrandMark brand={brand} />
-        <span className="paper-head__meta">{doc.eyebrow || 'STUDY NOTES'}</span>
+        <span className="paper-head__meta">{doc.eyebrow || 'PUBLICATION'}</span>
       </div>
     </header>
   )
@@ -144,56 +153,136 @@ function Cover({
   settings,
   totalPages,
   onChange,
+  onCoverUpload,
+  onCoverGenerate,
+  coverBusy,
 }: {
   doc: PdfDoc
   brand: BrandPreset
   settings: AppSettings
   totalPages: number
   onChange: (doc: PdfDoc) => void
+  onCoverUpload?: (file: File) => void
+  onCoverGenerate?: () => void
+  coverBusy?: boolean
 }) {
   const vars = paperVars(settings, brand, 'cover')
   const theme = themeFor(settings, 'cover')
   const date = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  const coverInputRef = useRef<HTMLInputElement>(null)
+  const coverLayout = doc.coverImageLayout ?? 'banner'
+  const hasCoverImg = Boolean(doc.coverImage)
+
+  const cycleCoverLayout = () => {
+    const order: ('banner' | 'full' | 'side')[] = ['banner', 'side', 'full']
+    const next = order[(order.indexOf(coverLayout) + 1) % order.length]
+    onChange({ ...doc, coverImageLayout: next })
+  }
+
   return (
     <article
-      className="paper-page paper-cover"
+      className={`paper-page paper-cover${hasCoverImg ? ` cover--has-image cover--${coverLayout}` : ''}`}
       data-pdf-page="cover"
       data-layout={settings.layout}
       data-header={settings.headerStyle}
-      data-paper-dark={theme.dark ? 'true' : 'false'}
+      data-paper-dark={theme.dark || (hasCoverImg && coverLayout === 'full') ? 'true' : 'false'}
       style={vars}
     >
       <div className="cover__wash" aria-hidden="true" />
       <div className="cover__grid" aria-hidden="true" />
+
+      {hasCoverImg && coverLayout === 'full' ? (
+        <div className="cover__bg-media" aria-hidden="true">
+          <img src={doc.coverImage} alt="" />
+          <div className="cover__bg-scrim" />
+        </div>
+      ) : null}
+
       <div className="cover__top">
         <BrandMark brand={brand} />
-        <Editable
-          as="span"
-          className="cover__eyebrow"
-          value={doc.eyebrow}
-          placeholder="EYEBROW"
-          onChange={(value) => onChange({ ...doc, eyebrow: value })}
-        />
+        <div className="cover__top-right">
+          <Editable
+            as="span"
+            className="cover__eyebrow"
+            value={doc.eyebrow}
+            placeholder="EYEBROW"
+            onChange={(value) => onChange({ ...doc, eyebrow: value })}
+          />
+          {onCoverUpload || onCoverGenerate ? (
+            <div className="cover-tools no-export">
+              <input
+                ref={coverInputRef}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file && onCoverUpload) onCoverUpload(file)
+                  e.target.value = ''
+                }}
+              />
+              {onCoverGenerate ? (
+                <button type="button" className="cover-tool" onClick={onCoverGenerate} disabled={coverBusy}>
+                  {coverBusy ? 'Rendering…' : hasCoverImg ? 'Regen Cover' : 'AI Cover'}
+                </button>
+              ) : null}
+              {onCoverUpload ? (
+                <button type="button" className="cover-tool" onClick={() => coverInputRef.current?.click()}>
+                  Upload
+                </button>
+              ) : null}
+              {hasCoverImg ? (
+                <>
+                  <button type="button" className="cover-tool" onClick={cycleCoverLayout}>
+                    {coverLayout}
+                  </button>
+                  <button
+                    type="button"
+                    className="cover-tool"
+                    onClick={() => onChange({ ...doc, coverImage: undefined })}
+                    title="Remove cover image"
+                  >
+                    ×
+                  </button>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
       </div>
-      <div className="cover__main">
-        <Editable
-          as="h1"
-          className="cover__title"
-          value={doc.title}
-          multiline
-          placeholder="Document title"
-          onChange={(value) => onChange({ ...doc, title: value })}
-        />
-        <div className="cover__rule" aria-hidden="true" />
-        <Editable
-          as="p"
-          className="cover__sub"
-          value={doc.subtitle}
-          multiline
-          placeholder="One line of context"
-          onChange={(value) => onChange({ ...doc, subtitle: value })}
-        />
+
+      <div className={`cover__hero${hasCoverImg && coverLayout !== 'full' ? ` cover__hero--${coverLayout}` : ''}`}>
+        <div className="cover__main">
+          <Editable
+            as="h1"
+            className="cover__title"
+            value={doc.title}
+            multiline
+            placeholder="Document title"
+            onChange={(value) => onChange({ ...doc, title: value })}
+          />
+          <div className="cover__rule" aria-hidden="true" />
+          <Editable
+            as="p"
+            className="cover__sub"
+            value={doc.subtitle}
+            multiline
+            placeholder="One line of context"
+            onChange={(value) => onChange({ ...doc, subtitle: value })}
+          />
+        </div>
+
+        {hasCoverImg && coverLayout !== 'full' ? (
+          <div className="cover__art">
+            <img src={doc.coverImage} alt={doc.title || 'Cover visual'} />
+          </div>
+        ) : !hasCoverImg && coverBusy ? (
+          <div className="cover__art cover__art--loading no-export">
+            <div className="img-shimmer">Rendering cover visual…</div>
+          </div>
+        ) : null}
       </div>
+
       <div className="cover__foot">
         <div className="cover__chips">
           <span className="cover__chip">{doc.sections.length} sections</span>
@@ -216,38 +305,118 @@ function BlockView({
   blockIndex,
   doc,
   onChange,
+  rowStart,
+  rowEnd,
+  isContinuation,
+  onMoveBlock,
+  onDeleteBlock,
+  onRegenerateImage,
+  onUploadBlockImage,
 }: {
   block: DocBlock
   sectionIndex: number
   blockIndex: number
   doc: PdfDoc
   onChange: (doc: PdfDoc) => void
+  rowStart?: number
+  rowEnd?: number
+  isContinuation?: boolean
+  onMoveBlock?: (sectionId: string, blockId: string, direction: -1 | 1) => void
+  onDeleteBlock?: (sectionId: string, blockId: string) => void
+  onRegenerateImage?: (sectionId: string, blockId: string) => void
+  onUploadBlockImage?: (sectionId: string, blockId: string, file: File) => void
 }) {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const section = doc.sections[sectionIndex]
   const set = (text: string) => onChange(setBlockText(doc, sectionIndex, blockIndex, text))
   const patch = (updater: (current: DocBlock) => DocBlock) =>
     onChange(updateBlock(doc, sectionIndex, blockIndex, updater))
 
+  const wrapWithTools = (content: ReactNode) => {
+    if (!section || isContinuation || (!onMoveBlock && !onDeleteBlock)) return content
+    return (
+      <div className="blk-wrap">
+        <div className="blk-hover-tools no-export">
+          {block.type === 'image' && onRegenerateImage ? (
+            <button
+              type="button"
+              className="blk-tool"
+              title="Generate / regenerate AI visual"
+              onClick={() => onRegenerateImage(section.id, block.id)}
+              disabled={block.generating}
+            >
+              {block.generating ? '…' : '✦ AI'}
+            </button>
+          ) : null}
+          {block.type === 'image' && onUploadBlockImage ? (
+            <button
+              type="button"
+              className="blk-tool"
+              title="Upload image"
+              onClick={() => fileRef.current?.click()}
+            >
+              ↑ Img
+            </button>
+          ) : null}
+          {onMoveBlock ? (
+            <>
+              <button
+                type="button"
+                className="blk-tool"
+                title="Move block up"
+                disabled={blockIndex === 0}
+                onClick={() => onMoveBlock(section.id, block.id, -1)}
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                className="blk-tool"
+                title="Move block down"
+                disabled={blockIndex === section.blocks.length - 1}
+                onClick={() => onMoveBlock(section.id, block.id, 1)}
+              >
+                ↓
+              </button>
+            </>
+          ) : null}
+          {onDeleteBlock ? (
+            <button
+              type="button"
+              className="blk-tool blk-tool--danger"
+              title="Remove block"
+              onClick={() => onDeleteBlock(section.id, block.id)}
+            >
+              ×
+            </button>
+          ) : null}
+        </div>
+        {content}
+      </div>
+    )
+  }
+
   switch (block.type) {
     case 'lead':
-      return (
+      return wrapWithTools(
         <div className="blk blk--lead">
           <Editable as="p" className="blk-lead__text" value={block.text} multiline onChange={set} />
-        </div>
+        </div>,
       )
     case 'paragraph':
-      return (
+      return wrapWithTools(
         <div className="blk blk--p">
           <Editable as="p" className="blk-p__text" value={block.text} multiline onChange={set} />
-        </div>
+        </div>,
       )
     case 'subheading':
-      return (
+      return wrapWithTools(
         <div className="blk blk--sub">
           <Editable as="h3" className="blk-sub__text" value={block.text} onChange={set} />
-        </div>
+        </div>,
       )
     case 'bullets':
-      return (
+      return wrapWithTools(
         <div className="blk blk--list">
           <ul className="blk-list">
             {block.items.map((item, index) => (
@@ -268,10 +437,10 @@ function BlockView({
               </li>
             ))}
           </ul>
-        </div>
+        </div>,
       )
     case 'numbered':
-      return (
+      return wrapWithTools(
         <div className="blk blk--list">
           <ol className="blk-list blk-list--ordered">
             {block.items.map((item, index) => (
@@ -293,10 +462,10 @@ function BlockView({
               </li>
             ))}
           </ol>
-        </div>
+        </div>,
       )
     case 'keyterms':
-      return (
+      return wrapWithTools(
         <div className="blk blk--terms">
           <div className="blk-terms">
             {block.items.map((item, index) => (
@@ -337,21 +506,31 @@ function BlockView({
               </div>
             ))}
           </div>
-        </div>
+        </div>,
       )
-    case 'table':
-      return (
+    case 'table': {
+      const start = rowStart ?? 0
+      const end = rowEnd ?? block.rows.length
+      const visibleRows = block.rows.slice(start, end)
+      const capText = isContinuation
+        ? `${block.caption || 'Table'} (cont.)`
+        : block.caption
+      return wrapWithTools(
         <div className="blk blk--table">
           <figure className="blk-table">
-            <Editable
-              as="figcaption"
-              className="blk-table__cap"
-              value={block.caption}
-              placeholder="Table caption"
-              onChange={(value) =>
-                patch((current) => (current.type === 'table' ? { ...current, caption: value } : current))
-              }
-            />
+            {isContinuation ? (
+              <figcaption className="blk-table__cap">{capText}</figcaption>
+            ) : (
+              <Editable
+                as="figcaption"
+                className="blk-table__cap"
+                value={block.caption}
+                placeholder="Table caption"
+                onChange={(value) =>
+                  patch((current) => (current.type === 'table' ? { ...current, caption: value } : current))
+                }
+              />
+            )}
             <table>
               <thead>
                 <tr>
@@ -377,39 +556,43 @@ function BlockView({
                 </tr>
               </thead>
               <tbody>
-                {block.rows.map((row, rowIndex) => (
-                  <tr key={rowIndex}>
-                    {row.map((cell, cellIndex) => (
-                      <td key={cellIndex}>
-                        <Editable
-                          as="span"
-                          value={cell}
-                          multiline
-                          onChange={(value) =>
-                            patch((current) =>
-                              current.type === 'table'
-                                ? {
-                                    ...current,
-                                    rows: current.rows.map((r, ri) =>
-                                      ri === rowIndex ? r.map((c, ci) => (ci === cellIndex ? value : c)) : r,
-                                    ),
-                                  }
-                                : current,
-                            )
-                          }
-                        />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
+                {visibleRows.map((row, relIndex) => {
+                  const rowIndex = start + relIndex
+                  return (
+                    <tr key={rowIndex}>
+                      {row.map((cell, cellIndex) => (
+                        <td key={cellIndex}>
+                          <Editable
+                            as="span"
+                            value={cell}
+                            multiline
+                            onChange={(value) =>
+                              patch((current) =>
+                                current.type === 'table'
+                                  ? {
+                                      ...current,
+                                      rows: current.rows.map((r, ri) =>
+                                        ri === rowIndex ? r.map((c, ci) => (ci === cellIndex ? value : c)) : r,
+                                      ),
+                                    }
+                                  : current,
+                              )
+                            }
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </figure>
-        </div>
+        </div>,
       )
+    }
     case 'callout': {
       const icon = (block.icon ?? DEFAULT_ICON[block.kind] ?? 'pin') as CalloutIcon
-      return (
+      return wrapWithTools(
         <div className={`blk blk--callout blk--callout-${block.kind}`}>
           <aside
             className="callout"
@@ -437,11 +620,11 @@ function BlockView({
               }
             />
           </aside>
-        </div>
+        </div>,
       )
     }
     case 'quote':
-      return (
+      return wrapWithTools(
         <div className="blk blk--quote">
           <blockquote className="quote">
             <Editable as="p" className="quote__text" value={block.text} multiline onChange={set} />
@@ -455,21 +638,127 @@ function BlockView({
               }
             />
           </blockquote>
-        </div>
+        </div>,
+      )
+    case 'stats':
+      return wrapWithTools(
+        <div className="blk blk--stats">
+          {block.title ? (
+            <Editable
+              as="h4"
+              className="stats-title"
+              value={block.title}
+              placeholder="Key metrics"
+              onChange={(title) =>
+                patch((current) => (current.type === 'stats' ? { ...current, title } : current))
+              }
+            />
+          ) : null}
+          <div className="stats-grid" data-count={Math.min(4, Math.max(1, block.items.length))}>
+            {block.items.map((item, index) => (
+              <div className="stat-card" key={item.id}>
+                <Editable
+                  as="span"
+                  className="stat-card__value"
+                  value={item.value}
+                  onChange={(value) =>
+                    patch((current) =>
+                      current.type === 'stats'
+                        ? {
+                            ...current,
+                            items: current.items.map((st, i) => (i === index ? { ...st, value } : st)),
+                          }
+                        : current,
+                    )
+                  }
+                />
+                <Editable
+                  as="span"
+                  className="stat-card__label"
+                  value={item.label}
+                  multiline
+                  onChange={(label) =>
+                    patch((current) =>
+                      current.type === 'stats'
+                        ? {
+                            ...current,
+                            items: current.items.map((st, i) => (i === index ? { ...st, label } : st)),
+                          }
+                        : current,
+                    )
+                  }
+                />
+                {item.delta ? (
+                  <Editable
+                    as="span"
+                    className="stat-card__delta"
+                    value={item.delta}
+                    onChange={(delta) =>
+                      patch((current) =>
+                        current.type === 'stats'
+                          ? {
+                              ...current,
+                              items: current.items.map((st, i) => (i === index ? { ...st, delta } : st)),
+                            }
+                          : current,
+                      )
+                    }
+                  />
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>,
       )
     case 'image': {
       const width = Math.min(100, Math.max(25, block.width || 100))
-      return (
+      const fit = block.fit === 'cover' ? 'cover' : 'contain'
+      return wrapWithTools(
         <div className={`blk blk--image blk--image-${block.align}`}>
+          {onUploadBlockImage ? (
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file && section) onUploadBlockImage(section.id, block.id, file)
+                e.target.value = ''
+              }}
+            />
+          ) : null}
           <figure className="img-block" style={{ width: `${width}%` }}>
             {block.url ? (
               <img
-                className={`img-block__img${block.rounded ? ' is-rounded' : ''}`}
+                className={`img-block__img${block.rounded ? ' is-rounded' : ''} img-block__img--${fit}`}
                 src={block.url}
-                alt={block.caption || 'Document image'}
+                alt={block.caption || 'Document visual'}
               />
+            ) : block.generating ? (
+              <div className="img-shimmer no-export">
+                <span>Generating visual: {block.prompt?.slice(0, 72) || 'Illustration'}…</span>
+              </div>
             ) : (
-              <div className="img-block__empty">Paste an image URL or upload one in the Design panel</div>
+              <div className="img-block__empty no-export">
+                <p>{block.prompt ? `Visual brief: “${block.prompt.slice(0, 96)}”` : 'Drop, paste (Ctrl+V), upload or generate a visual'}</p>
+                <div className="img-block__empty-actions">
+                  {block.prompt && section && onRegenerateImage ? (
+                    <button
+                      type="button"
+                      className="cover-tool"
+                      onClick={() => onRegenerateImage(section.id, block.id)}
+                    >
+                      ✦ Generate AI Visual
+                    </button>
+                  ) : null}
+                  {section && onUploadBlockImage ? (
+                    <button type="button" className="cover-tool" onClick={() => fileRef.current?.click()}>
+                      Upload Image
+                    </button>
+                  ) : null}
+                </div>
+              </div>
             )}
             <Editable
               as="figcaption"
@@ -481,11 +770,11 @@ function BlockView({
               }
             />
           </figure>
-        </div>
+        </div>,
       )
     }
     case 'chart':
-      return (
+      return wrapWithTools(
         <div className="blk blk--chart">
           <ChartSvg
             chart={block.chart}
@@ -495,23 +784,27 @@ function BlockView({
             values2={block.values2}
             accent={block.accent || 'var(--brand)'}
             accent2={block.accent2 || 'var(--accent)'}
+            unit={block.unit}
+            seriesA={block.seriesA}
+            seriesB={block.seriesB}
+            note={block.note}
           />
-        </div>
+        </div>,
       )
     case 'diagram':
-      return (
+      return wrapWithTools(
         <div className="blk blk--diagram">
           <DiagramView block={block} />
-        </div>
+        </div>,
       )
     case 'math':
-      return (
+      return wrapWithTools(
         <div className="blk blk--math">
           <MathView block={block} />
-        </div>
+        </div>,
       )
     case 'timeline':
-      return (
+      return wrapWithTools(
         <div className={`blk blk--timeline tl--${block.orientation}`}>
           <Editable
             as="h4"
@@ -530,7 +823,7 @@ function BlockView({
                   as="span"
                   className="tl__date"
                   value={event.date}
-                  placeholder="Year"
+                  placeholder="Phase"
                   onChange={(value) =>
                     patch((current) =>
                       current.type === 'timeline'
@@ -584,7 +877,7 @@ function BlockView({
               </li>
             ))}
           </ol>
-        </div>
+        </div>,
       )
     default:
       return null
@@ -660,20 +953,30 @@ function McqView({
   )
 }
 
-export function DocPages({ doc, settings, brand, onChange, onPageCount }: Props) {
+export function DocPages({
+  doc,
+  settings,
+  brand,
+  onChange,
+  onPageCount,
+  onMoveBlock,
+  onDeleteBlock,
+  onRegenerateImage,
+  onUploadBlockImage,
+  onCoverUpload,
+  onCoverGenerate,
+  coverBusy,
+}: Props) {
   const vars = paperVars(settings, brand, 'body')
   const theme = themeFor(settings, 'body')
   const measureRef = useRef<HTMLDivElement>(null)
   const pagesRef = useRef<HTMLDivElement>(null)
-  // page → column → flow-item indices
   const [pages, setPages] = useState<number[][][]>([])
   const [fontsReady, setFontsReady] = useState(false)
-  // Safety reserve absorbs sub-pixel drift between measurement and print.
-  // It starts tight so pages look full, then grows only if a page overflows.
-  const [reserve, setReserve] = useState(56)
+  const [measureTick, setMeasureTick] = useState(0)
+  const [reserve, setReserve] = useState(48)
   const overflowChecks = useRef(0)
-  // The textbook layout places body content in two measured columns, so one
-  // page holds roughly twice the single-column height.
+
   const columns = settings.layout === 'two-column-textbook' ? 2 : 1
   const columnGap = 30
   const measureWidth =
@@ -684,13 +987,29 @@ export function DocPages({ doc, settings, brand, onChange, onPageCount }: Props)
     doc.sections.forEach((section, sectionIndex) => {
       list.push({ key: `sec-${section.id}`, sticky: true, kind: 'section', sectionIndex })
       section.blocks.forEach((block, blockIndex) => {
-        list.push({
-          key: `blk-${block.id}`,
-          sticky: false,
-          kind: 'block',
-          sectionIndex,
-          blockIndex,
-        })
+        if (block.type === 'table' && block.rows.length > TABLE_SLICE_ROWS) {
+          for (let start = 0; start < block.rows.length; start += TABLE_SLICE_ROWS) {
+            const end = Math.min(start + TABLE_SLICE_ROWS, block.rows.length)
+            list.push({
+              key: `blk-${block.id}-r${start}`,
+              sticky: false,
+              kind: 'block',
+              sectionIndex,
+              blockIndex,
+              rowStart: start,
+              rowEnd: end,
+              isContinuation: start > 0,
+            })
+          }
+        } else {
+          list.push({
+            key: `blk-${block.id}`,
+            sticky: block.type === 'subheading',
+            kind: 'block',
+            sectionIndex,
+            blockIndex,
+          })
+        }
       })
     })
     if (doc.mcqs.length) {
@@ -717,20 +1036,36 @@ export function DocPages({ doc, settings, brand, onChange, onPageCount }: Props)
     }
   }, [])
 
+  // Re-measure whenever async images/SVGs/KaTeX resize inside the hidden measurement flow.
+  useEffect(() => {
+    const root = measureRef.current
+    if (!root) return
+    let raf = 0
+    const bump = () => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => setMeasureTick((t) => t + 1))
+    }
+    const observer = new ResizeObserver(bump)
+    observer.observe(root)
+    root.addEventListener('load', bump, true)
+    return () => {
+      cancelAnimationFrame(raf)
+      observer.disconnect()
+      root.removeEventListener('load', bump, true)
+    }
+  }, [])
+
   useEffect(() => {
     overflowChecks.current = 0
-    setReserve(56)
+    setReserve(48)
   }, [settings.layout, settings.fontPairing, settings.headerStyle, settings.themeId, doc.sections.length])
 
   useLayoutEffect(() => {
     const root = measureRef.current
     if (!root) return
     const nodes = Array.from(root.querySelectorAll<HTMLElement>('[data-measure-index]'))
-    // offsetHeight is layout-based, so it stays correct inside the zoom transform.
     const measured = nodes.map((node) => node.offsetHeight)
     const sticky = items.map((item) => item.sticky)
-    // Two columns are packed as separate measured columns and then paired onto
-    // pages, so neither column can ever outgrow the A4 body height.
     const columnCapacity = CONTENT_HEIGHT - reserve
     const columnsOfItems = paginate(measured, columnCapacity, sticky, FLOW_GAP)
     const grouped: number[][][] =
@@ -752,22 +1087,21 @@ export function DocPages({ doc, settings, brand, onChange, onPageCount }: Props)
     brand.accent,
     fontsReady,
     reserve,
+    measureTick,
   ])
 
-  // Post-render guard: if a real page's content ran past the body box (new
-  // diagrams, wide tables, fallback fonts), tighten the budget and repaginate.
   useLayoutEffect(() => {
     const root = pagesRef.current
     if (!root || !pages.length) return
     const bodies = Array.from(root.querySelectorAll<HTMLElement>('.paper-body'))
     const overflowing = bodies.some((body) => body.scrollHeight > body.clientHeight + 2)
-    if (overflowing && overflowChecks.current < 4) {
+    if (overflowing && overflowChecks.current < 5) {
       overflowChecks.current += 1
-      setReserve((value) => Math.min(value + 24, CONTENT_HEIGHT - 220))
+      setReserve((value) => Math.min(value + 24, CONTENT_HEIGHT - 200))
     }
   }, [pages, reserve, settings.layout])
 
-  const renderItem = (item: FlowItem) => {
+  const renderItem = (item: FlowItem, interactive = true) => {
     if (item.kind === 'section') {
       const sectionIndex = item.sectionIndex ?? 0
       const section = doc.sections[sectionIndex]
@@ -813,6 +1147,13 @@ export function DocPages({ doc, settings, brand, onChange, onPageCount }: Props)
         blockIndex={blockIndex}
         doc={doc}
         onChange={onChange}
+        rowStart={item.rowStart}
+        rowEnd={item.rowEnd}
+        isContinuation={item.isContinuation}
+        onMoveBlock={interactive ? onMoveBlock : undefined}
+        onDeleteBlock={interactive ? onDeleteBlock : undefined}
+        onRegenerateImage={interactive ? onRegenerateImage : undefined}
+        onUploadBlockImage={interactive ? onUploadBlockImage : undefined}
       />
     )
   }
@@ -826,7 +1167,7 @@ export function DocPages({ doc, settings, brand, onChange, onPageCount }: Props)
       if (!item) return null
       return (
         <div className="flow-item" key={item.key}>
-          {renderItem(item)}
+          {renderItem(item, true)}
         </div>
       )
     })
@@ -849,7 +1190,7 @@ export function DocPages({ doc, settings, brand, onChange, onPageCount }: Props)
           <div className="paper-flow" style={{ width: measureWidth, gap: FLOW_GAP }}>
             {items.map((item, index) => (
               <div className="flow-item" key={item.key} data-measure-index={index}>
-                {renderItem(item)}
+                {renderItem(item, false)}
               </div>
             ))}
           </div>
@@ -862,6 +1203,9 @@ export function DocPages({ doc, settings, brand, onChange, onPageCount }: Props)
         settings={settings}
         totalPages={Math.max(totalPages, 1)}
         onChange={onChange}
+        onCoverUpload={onCoverUpload}
+        onCoverGenerate={onCoverGenerate}
+        coverBusy={coverBusy}
       />
 
       {pages.map((pageColumns, pageIndex) => (

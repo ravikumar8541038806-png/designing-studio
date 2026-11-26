@@ -1,18 +1,32 @@
 import { normalizeCarousel, normalizeDoc } from './normalize'
-import { carouselSystemPrompt, carouselUserPrompt, docSystemPrompt, docUserPrompt } from './prompts'
-import { providerPreset } from '../theme/presets'
+import {
+  carouselSystemPrompt,
+  carouselUserPrompt,
+  detectInputMode,
+  docSystemPrompt,
+  docUserPrompt,
+} from './prompts'
+import { DEFAULT_CATALOG, providerPreset } from '../theme/presets'
+import { proxyHeaders, proxyOn, proxyUrl } from './proxy'
 import type { AppSettings, BrandPreset, Carousel, ModelOption, PdfDoc, ProviderId } from '../types'
 
 export class AiError extends Error {
   hint?: string
   status?: number
   retryable: boolean
-  constructor(message: string, hint?: string, options: { status?: number; retryable?: boolean } = {}) {
+  /** True when the API key itself is invalid/unauthorized and retrying other models will not help. */
+  fatalAuth: boolean
+  constructor(
+    message: string,
+    hint?: string,
+    options: { status?: number; retryable?: boolean; fatalAuth?: boolean } = {},
+  ) {
     super(message)
     this.name = 'AiError'
     this.hint = hint
     this.status = options.status
     this.retryable = options.retryable ?? false
+    this.fatalAuth = options.fatalAuth ?? false
   }
 }
 
@@ -21,24 +35,29 @@ const ANTHROPIC_MESSAGES = 'https://api.anthropic.com/v1/messages'
 const ANTHROPIC_MODELS = 'https://api.anthropic.com/v1/models'
 const ANTHROPIC_VERSION = '2023-06-01'
 
-/** A stream that sends nothing for this long is treated as dead. */
-export const STREAM_IDLE_TIMEOUT_MS = 30_000
-/** Absolute ceiling for one streaming request. A working stream runs to the end. */
-export const STREAM_MAX_MS = 150_000
-/** Retries after the first attempt, per model, for 429 / 503. */
-const MAX_RETRIES = 3
-const RETRY_DELAY_MS = 2_000
-const MAX_MODEL_ATTEMPTS = 3
+/** A stream that sends nothing for this long is treated as stalled and fails over. */
+export const STREAM_IDLE_TIMEOUT_MS = 28_000
+/** Absolute ceiling for one streaming request. */
+export const STREAM_MAX_MS = 140_000
+/** Short retry count per model before failing over cleanly to the next model. */
+const MAX_RETRIES_PER_MODEL = 1
+const MAX_MODEL_ATTEMPTS = 5
+
+const CURATED_FALLBACKS: Record<ProviderId, string[]> = {
+  gemini: ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'],
+  anthropic: ['claude-sonnet-4-20250514', 'claude-3-7-sonnet-latest', 'claude-3-5-haiku-latest'],
+}
 
 /** Receives the number of characters streamed so far, for live button labels. */
 export type StreamProgress = (chars: number) => void
+
+let cachedImageModels: { key: string; models: { id: string; mode: 'chat' | 'predict' }[] } | null = null
 
 function anthropicHeaders(apiKey: string): Record<string, string> {
   return {
     'content-type': 'application/json',
     'x-api-key': apiKey,
     'anthropic-version': ANTHROPIC_VERSION,
-    // Required for direct browser calls; the key never leaves this device.
     'anthropic-dangerous-direct-browser-access': 'true',
   }
 }
@@ -46,12 +65,14 @@ function anthropicHeaders(apiKey: string): Record<string, string> {
 function timeoutError(reason: 'idle' | 'cap' = 'cap'): AiError {
   return reason === 'idle'
     ? new AiError(
-        `The model stopped sending data for ${Math.round(STREAM_IDLE_TIMEOUT_MS / 1000)} seconds.`,
-        'Pick a Flash model, shorten the source, or use Direct Mode (No AI) for an instant result.',
+        'The AI model took too long to respond.',
+        'Retrying with another model or use Direct Mode (No AI) for an instant layout.',
+        { retryable: true },
       )
     : new AiError(
-        `The request hit its ${Math.round(STREAM_MAX_MS / 1000)}-second ceiling.`,
-        'Pick a Flash model, shorten the source, or use Direct Mode (No AI) for an instant result.',
+        'The request took too long to complete.',
+        'Try a shorter prompt or Direct Mode (No AI) for instant structuring.',
+        { retryable: true },
       )
 }
 
@@ -75,53 +96,47 @@ async function failureMessage(response: Response, provider: ProviderId): Promise
   detail = shortDetail(detail)
   const label = providerPreset(provider).name
   const status = response.status
-  // Google reports the useful cause in the body; keep it so debugging is not guesswork.
-  const suffix = detail ? `: ${detail}` : '.'
-  const retryable = status === 429 || status === 503 || status === 502 || status === 504
+  if (detail) console.warn(`[ClientForge AI] ${label} HTTP ${status}: ${detail}`)
 
   if (status === 401 || status === 403) {
     return new AiError(
-      `${label} rejected the API key (HTTP ${status})${suffix}`,
-      'Open API Settings and paste a valid key for this provider.',
-      { status },
+      `Your ${label} API key wasn't accepted.`,
+      'Open API Settings and verify your key (or enable the Cloudflare proxy).',
+      { status, fatalAuth: true },
     )
   }
   if (status === 404) {
     return new AiError(
-      `${label} could not find that model (HTTP 404)${suffix}`,
-      'Open API Settings, refresh the model list and pick a model your key can access.',
-      { status },
+      'That AI model is currently unavailable on your account.',
+      'Switching automatically to an available model.',
+      { status, retryable: true },
     )
   }
   if (status === 429) {
     return new AiError(
-      `${label} rate limit or quota reached (HTTP 429)${suffix}`,
-      'Free-tier quota refills per minute. Wait ~30 seconds, or switch to a Flash-Lite model.',
-      { status, retryable },
+      `${label} is temporarily busy (rate limit reached).`,
+      'Wait a few seconds and try again, or use Direct Mode (No AI) instantly.',
+      { status, retryable: true },
     )
   }
   if (status === 400) {
     return new AiError(
-      `${label} rejected the request (HTTP 400)${suffix}`,
-      'The model may not accept JSON mode or thinking settings. Pick another Flash model in API Settings.',
-      { status },
-    )
-  }
-  if (status === 503) {
-    return new AiError(
-      `${label} is overloaded (HTTP 503)${suffix}`,
-      'This is temporary — retrying on a fallback Flash model usually clears it.',
-      { status, retryable },
+      'The AI model could not process those parameters.',
+      'Trying a compatible fallback model automatically.',
+      { status, retryable: true },
     )
   }
   if (status >= 500) {
     return new AiError(
-      `${label} service error (HTTP ${status})${suffix}`,
-      'Retrying usually helps; if not, switch model or provider.',
-      { status, retryable },
+      `${label} is temporarily overloaded.`,
+      'Please try again in a moment.',
+      { status, retryable: true },
     )
   }
-  return new AiError(`${label} request failed (HTTP ${status})${suffix}`, undefined, { status })
+  return new AiError(`${label} could not complete the request.`, 'Please try again.', {
+    status,
+    retryable: true,
+  })
 }
 
 function wait(ms: number): Promise<void> {
@@ -136,31 +151,26 @@ function geminiText(data: Record<string, unknown>): string {
   return (parts ?? []).map((part) => part.text ?? '').join('')
 }
 
-function geminiConfig(maxTokens: number, thinking: boolean): Record<string, unknown> {
-  const config: Record<string, unknown> = {
-    temperature: 0.5,
+function geminiPayload(
+  system: string,
+  user: string,
+  maxTokens: number,
+  options: { jsonMode: boolean; suppressThinking: boolean },
+): string {
+  const generationConfig: Record<string, unknown> = {
+    temperature: 0.45,
     maxOutputTokens: maxTokens,
-    // Structured output: no prose wrapper, no markdown fences, much faster.
-    responseMimeType: 'application/json',
   }
-  // Fast response mode — suppress extended thinking where the model allows it.
-  if (thinking) config.thinkingConfig = { thinkingBudget: 0 }
-  return config
-}
+  if (options.jsonMode) generationConfig.responseMimeType = 'application/json'
+  if (options.suppressThinking) generationConfig.thinkingConfig = { thinkingBudget: 0 }
 
-function geminiPayload(system: string, user: string, maxTokens: number, thinking: boolean): string {
   return JSON.stringify({
     systemInstruction: { role: 'system', parts: [{ text: system }] },
     contents: [{ role: 'user', parts: [{ text: user }] }],
-    generationConfig: geminiConfig(maxTokens, thinking),
+    generationConfig,
   })
 }
 
-/**
- * Gemini SSE stream, called straight from the browser (no proxy in between).
- * Progress is reported per chunk, a 30s idle watchdog resets on every chunk so
- * a working stream is never cut, and the 150s cap is the only hard ceiling.
- */
 async function streamGemini(options: {
   apiKey: string
   model: string
@@ -170,9 +180,11 @@ async function streamGemini(options: {
   thinking: boolean
   onProgress?: StreamProgress
 }): Promise<string> {
-  const url = `${GEMINI_BASE}/models/${encodeURIComponent(
-    options.model,
-  )}:streamGenerateContent?alt=sse&key=${encodeURIComponent(options.apiKey)}`
+  const url = proxyOn()
+    ? proxyUrl('/text/stream', { model: options.model })
+    : `${GEMINI_BASE}/models/${encodeURIComponent(
+        options.model,
+      )}:streamGenerateContent?alt=sse&key=${encodeURIComponent(options.apiKey)}`
   const controller = new AbortController()
   let abortReason: 'idle' | 'cap' | null = null
 
@@ -192,21 +204,30 @@ async function streamGemini(options: {
 
   try {
     resetIdle()
-    const send = (thinking: boolean) =>
+    const send = (jsonMode: boolean, suppressThinking: boolean) =>
       fetch(url, {
         method: 'POST',
         signal: controller.signal,
-        headers: { 'content-type': 'application/json' },
-        body: geminiPayload(options.system, options.user, options.maxTokens, thinking),
+        headers: proxyOn() ? proxyHeaders() : { 'content-type': 'application/json' },
+        body: geminiPayload(options.system, options.user, options.maxTokens, {
+          jsonMode,
+          suppressThinking,
+        }),
       })
 
-    let response = await send(options.thinking)
-    // Older models reject thinkingConfig outright; the same call succeeds without it.
+    let response = await send(true, options.thinking)
+    // Step 1: older Gemini models reject thinkingConfig with HTTP 400.
     if (!response.ok && response.status === 400 && options.thinking) {
-      response = await send(false)
+      response = await send(true, false)
+    }
+    // Step 2: some models reject responseMimeType: application/json with HTTP 400.
+    if (!response.ok && response.status === 400) {
+      response = await send(false, false)
     }
     if (!response.ok) throw await failureMessage(response, 'gemini')
-    if (!response.body) throw new AiError('The provider opened no stream.', 'Try again, or switch model.')
+    if (!response.body) {
+      throw new AiError('The AI stream opened empty.', 'Trying another model.', { retryable: true })
+    }
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
@@ -218,7 +239,6 @@ async function streamGemini(options: {
       const { done, value } = await reader.read()
       if (done) break
       resetIdle()
-      // Raw CR only appears in SSE line endings, so normalising is safe.
       buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n')
       let cut = buffer.indexOf('\n\n')
       while (cut !== -1) {
@@ -249,8 +269,13 @@ async function streamGemini(options: {
     }
 
     if (!text.trim()) {
-      if (blocked) throw new AiError(`Gemini blocked the response (${blocked}).`, 'Adjust the source text and retry.')
-      throw new AiError('The model returned an empty response.', 'Try again, or switch to another model.')
+      if (blocked) {
+        throw new AiError(
+          'That content triggered a safety filter.',
+          'Adjust your wording slightly or use Direct Mode (No AI).',
+        )
+      }
+      throw new AiError('The AI returned an empty response.', 'Trying another model.', { retryable: true })
     }
     return text
   } catch (error) {
@@ -258,8 +283,9 @@ async function streamGemini(options: {
     if (error instanceof AiError) throw error
     if (error instanceof DOMException && error.name === 'AbortError') throw timeoutError('cap')
     throw new AiError(
-      'Could not reach the provider from this browser.',
-      'This is usually a network or CORS problem. Check your connection, then try again.',
+      'Could not reach the AI service.',
+      'Check your internet connection, or use Direct Mode (No AI).',
+      { retryable: true },
     )
   } finally {
     window.clearTimeout(idleTimer)
@@ -267,7 +293,6 @@ async function streamGemini(options: {
   }
 }
 
-/** Anthropic has no JSON streaming contract here, so one bounded round trip. */
 async function requestAnthropic(options: {
   apiKey: string
   model: string
@@ -285,7 +310,7 @@ async function requestAnthropic(options: {
       body: JSON.stringify({
         model: options.model,
         max_tokens: options.maxTokens,
-        temperature: 0.5,
+        temperature: 0.45,
         system: options.system,
         messages: [{ role: 'user', content: options.user }],
       }),
@@ -296,27 +321,27 @@ async function requestAnthropic(options: {
       data = (await response.json()) as Record<string, unknown>
     } catch {
       if (controller.signal.aborted) throw timeoutError('cap')
-      throw new AiError('The provider returned an unreadable response.', 'Try again, or switch model.')
+      throw new AiError('The AI response was unreadable.', 'Trying another model.', { retryable: true })
     }
     const content = data.content as { type?: string; text?: string }[] | undefined
     const text = (content ?? []).map((part) => part.text ?? '').join('')
     if (!text.trim()) {
-      throw new AiError('The model returned an empty response.', 'Try again, or switch to another model.')
+      throw new AiError('The AI returned an empty response.', 'Trying another model.', { retryable: true })
     }
     return text
   } catch (error) {
     if (error instanceof AiError) throw error
     if (controller.signal.aborted) throw timeoutError('cap')
     throw new AiError(
-      'Could not reach the provider from this browser.',
-      'This is usually a network or CORS problem. Check your connection, then try again.',
+      'Could not reach Anthropic from this browser.',
+      'Check your connection or switch to Gemini in API Settings.',
+      { retryable: true },
     )
   } finally {
     window.clearTimeout(timer)
   }
 }
 
-/** Dispatches one attempt; throws typed AiError so the retry loop can decide. */
 function requestOnce(options: {
   provider: ProviderId
   apiKey: string
@@ -348,8 +373,30 @@ function requestOnce(options: {
 }
 
 /**
- * Streams (Gemini) with a 30s idle guard and a 150s cap, retries 429/503 three
- * times with a 2s backoff, then falls back through the next stable Flash models.
+ * Resolves the ordered model chain for a request:
+ * when `autoModel` is enabled, picks the best ranked stable model from the catalog first,
+ * then fails over across live catalog models and curated known-good models.
+ */
+export function buildModelChain(settings: AppSettings, preferredModel?: string): string[] {
+  const provider = settings.provider
+  const catalogIds = settings.catalog[provider]
+    .map((m) => m.id)
+    .sort((a, b) => rankModel(a) - rankModel(b) || versionOf(b) - versionOf(a))
+
+  const primary = settings.autoModel
+    ? catalogIds[0] || settings.models[provider] || DEFAULT_CATALOG[provider][0]?.id || ''
+    : preferredModel || settings.models[provider] || catalogIds[0] || ''
+
+  return [primary, ...catalogIds, ...CURATED_FALLBACKS[provider]]
+    .map((model) => model.replace(/^models\//, '').trim())
+    .filter((model, index, all) => Boolean(model) && all.indexOf(model) === index)
+    .slice(0, MAX_MODEL_ATTEMPTS)
+}
+
+/**
+ * Calls the AI with silent automatic failover across models and optional JSON validation.
+ * Only fatal auth errors (401/403) stop immediately; 400/404/429/503/timeouts/bad JSON
+ * transparently fall back to the next healthy model in the chain.
  */
 export async function callModel(options: {
   provider: ProviderId
@@ -360,80 +407,81 @@ export async function callModel(options: {
   maxTokens?: number
   fallbackModels?: string[]
   onProgress?: StreamProgress
+  validateJson?: boolean
 }): Promise<string> {
-  if (!options.apiKey.trim()) {
-    throw new AiError('No API key saved for this provider.', 'Add your key in API Settings — it stays in this browser.')
-  }
-  if (!options.model.trim()) {
+  if (!options.apiKey.trim() && !proxyOn()) {
     throw new AiError(
-      'No model selected.',
-      'Open API Settings and refresh the model list — or switch on Direct Mode (No AI).',
+      'AI is not connected yet.',
+      'Open API Settings to add your key, or switch on Direct Mode (No AI) for instant offline formatting.',
     )
   }
 
-  const chain = [options.model, ...(options.fallbackModels ?? [])]
+  const chain = [options.model, ...(options.fallbackModels ?? []), ...CURATED_FALLBACKS[options.provider]]
     .map((model) => model.replace(/^models\//, '').trim())
     .filter((model, index, all) => Boolean(model) && all.indexOf(model) === index)
     .slice(0, MAX_MODEL_ATTEMPTS)
 
-  const tried: string[] = []
-  let retries = 0
+  if (!chain.length) {
+    throw new AiError('No AI model configured.', 'Open API Settings or switch on Direct Mode (No AI).')
+  }
+
   let lastError: AiError | null = null
 
   for (const model of chain) {
-    tried.push(model)
-    // Some Gemini models reject thinkingConfig outright; the stream retries without it.
-    const thinking =
+    const suppressThinking =
       options.provider === 'gemini' && /flash/i.test(model) && !/pro|thinking|learnlm|image|tts/i.test(model)
 
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+    for (let attempt = 0; attempt <= MAX_RETRIES_PER_MODEL; attempt += 1) {
       try {
-        return await requestOnce({
+        const text = await requestOnce({
           provider: options.provider,
           apiKey: options.apiKey,
           model,
           system: options.system,
           user: options.user,
           maxTokens: options.maxTokens ?? 8192,
-          thinking,
+          thinking: suppressThinking,
           onProgress: options.onProgress,
         })
+        if (options.validateJson) {
+          extractJson(text)
+        }
+        return text
       } catch (error) {
         const aiError =
           error instanceof AiError
             ? error
-            : new AiError(error instanceof Error ? error.message : 'Generation failed.')
-        if (!aiError.retryable) throw aiError
-
+            : new AiError(error instanceof Error ? error.message : 'Generation failed.', undefined, {
+                retryable: true,
+              })
+        if (aiError.fatalAuth) throw aiError
         lastError = aiError
-        if (attempt < MAX_RETRIES) {
-          retries += 1
-          await wait(RETRY_DELAY_MS)
+        // Only do a quick local retry on 429/503; 400/404/bad JSON advance to the next model immediately.
+        const shouldWait = attempt < MAX_RETRIES_PER_MODEL && (aiError.status === 429 || aiError.status === 503)
+        if (shouldWait) {
+          await wait(1100 + attempt * 900)
+          continue
         }
+        break
       }
     }
   }
 
-  if (!lastError) {
-    throw new AiError('Generation failed.', 'Try again, or turn on Direct Mode (No AI).')
-  }
-  const triedNote = tried.length > 1 ? ` Tried ${tried.join(' → ')}.` : ''
-  const retryNote = retries ? ` Retried ${retries}× before giving up.` : ''
-  throw new AiError(
-    `${lastError.message}${retryNote}${triedNote}`,
-    lastError.hint ?? 'Try again in a moment, switch to Flash-Lite, or turn on Direct Mode (No AI).',
-    { status: lastError.status },
+  throw (
+    lastError ??
+    new AiError(
+      'Could not complete the AI request right now.',
+      'Wait a moment and try again, or click "Use Direct Mode Instantly" below.',
+    )
   )
 }
 
-/**
- * Tiny "Reply OK" ping so a model can be verified in about two seconds.
- * Returns the round-trip time in milliseconds.
- */
 export async function testModel(provider: ProviderId, apiKey: string, model: string): Promise<number> {
   const key = apiKey.trim()
   const id = model.replace(/^models\//, '').trim()
-  if (!key) throw new AiError('Add an API key first.', 'The model list is read live from the provider.')
+  if (!key && !(proxyOn() && provider === 'gemini')) {
+    throw new AiError('Add an API key first.', 'The model list is read live from the provider.')
+  }
   if (!id) throw new AiError('Choose a model first.', 'Refresh the list, then pick a Flash model.')
 
   const controller = new AbortController()
@@ -443,7 +491,9 @@ export async function testModel(provider: ProviderId, apiKey: string, model: str
   try {
     let response: Response
     if (provider === 'gemini') {
-      const url = `${GEMINI_BASE}/models/${encodeURIComponent(id)}:generateContent?key=${encodeURIComponent(key)}`
+      const url = proxyOn()
+        ? proxyUrl('/text', { model: id })
+        : `${GEMINI_BASE}/models/${encodeURIComponent(id)}:generateContent?key=${encodeURIComponent(key)}`
       const withThinking = JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: 'Reply OK' }] }],
         generationConfig: {
@@ -455,14 +505,14 @@ export async function testModel(provider: ProviderId, apiKey: string, model: str
       response = await fetch(url, {
         method: 'POST',
         signal: controller.signal,
-        headers: { 'content-type': 'application/json' },
+        headers: proxyOn() ? proxyHeaders() : { 'content-type': 'application/json' },
         body: withThinking,
       })
       if (response.status === 400) {
         response = await fetch(url, {
           method: 'POST',
           signal: controller.signal,
-          headers: { 'content-type': 'application/json' },
+          headers: proxyOn() ? proxyHeaders() : { 'content-type': 'application/json' },
           body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text: 'Reply OK' }] }],
             generationConfig: { maxOutputTokens: 16, temperature: 0 },
@@ -489,12 +539,9 @@ export async function testModel(provider: ProviderId, apiKey: string, model: str
   } catch (error) {
     if (error instanceof AiError) throw error
     if (controller.signal.aborted) {
-      throw new AiError('The test timed out after 15 seconds.', 'The model is not responding — pick a Flash model.')
+      throw new AiError('The connection test timed out.', 'Try again or check your network.')
     }
-    throw new AiError(
-      'Could not reach the provider from this browser.',
-      'Check your connection, then test again.',
-    )
+    throw new AiError('Could not reach the provider from this browser.', 'Check your connection, then test again.')
   } finally {
     window.clearTimeout(timer)
   }
@@ -508,7 +555,37 @@ function parseJsonSlice(candidate: string): unknown | undefined {
   }
 }
 
-/** Walks a brace/bracket balanced slice starting at `start`, ignoring strings. */
+/** Repairs slightly truncated JSON or trailing commas before failing over. */
+function repairJson(candidate: string): unknown | undefined {
+  let cleaned = candidate.replace(/,\s*([}\]])/g, '$1').trim()
+  const direct = parseJsonSlice(cleaned)
+  if (direct !== undefined) return direct
+
+  // Close unclosed string/braces if stream was truncated near the end.
+  let inString = false
+  let escaped = false
+  const stack: string[] = []
+  for (let i = 0; i < cleaned.length; i += 1) {
+    const ch = cleaned[i]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (ch === '\\') escaped = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') inString = true
+    else if (ch === '{') stack.push('}')
+    else if (ch === '[') stack.push(']')
+    else if (ch === '}' || ch === ']') stack.pop()
+  }
+  if (inString) cleaned += '"'
+  cleaned = cleaned.replace(/,\s*$/, '')
+  while (stack.length) {
+    cleaned += stack.pop()
+  }
+  return parseJsonSlice(cleaned)
+}
+
 function balancedSlice(source: string, start: number): string | null {
   const opener = source[start]
   const closer = opener === '{' ? '}' : ']'
@@ -536,12 +613,11 @@ function balancedSlice(source: string, start: number): string | null {
 
 /**
  * Tolerant JSON reader: unwraps markdown fences, parses clean payloads
- * directly, and otherwise extracts the first balanced object or array.
+ * directly, extracts balanced slices, and repairs minor trailing truncations.
  */
 export function extractJson(text: string): unknown {
   let cleaned = text.replace(/^\uFEFF/, '').trim()
 
-  // ```json ... ``` (also plain ``` and a trailing fence without a newline)
   const fenced = cleaned.match(/```[ \t]*(?:json|JSON)?[ \t]*\r?\n?([\s\S]*?)```/)
   if (fenced && fenced[1] && fenced[1].trim()) cleaned = fenced[1].trim()
   cleaned = cleaned
@@ -552,38 +628,32 @@ export function extractJson(text: string): unknown {
   const direct = parseJsonSlice(cleaned)
   if (direct !== undefined) return direct
 
-  // First balanced object, then array.
   for (let i = 0; i < cleaned.length; i += 1) {
     const char = cleaned[i]
     if (char !== '{' && char !== '[') continue
     const slice = balancedSlice(cleaned, i)
     if (!slice) continue
-    const parsed = parseJsonSlice(slice)
+    const parsed = parseJsonSlice(slice) ?? repairJson(slice)
     if (parsed !== undefined) return parsed
   }
 
-  // Last resort: trim trailing prose and retry once.
   const firstBrace = cleaned.search(/[[{]/)
   const lastBrace = Math.max(cleaned.lastIndexOf('}'), cleaned.lastIndexOf(']'))
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    const parsed = parseJsonSlice(cleaned.slice(firstBrace, lastBrace + 1))
-    if (parsed !== undefined) return parsed
+  if (firstBrace !== -1) {
+    const tail = lastBrace > firstBrace ? cleaned.slice(firstBrace, lastBrace + 1) : cleaned.slice(firstBrace)
+    const repaired = repairJson(tail)
+    if (repaired !== undefined) return repaired
   }
 
   throw new AiError(
-    'The model returned malformed JSON.',
-    'Generate again, switch to a stronger model, or turn on Direct Mode (No AI).',
+    'The AI response was incomplete.',
+    'Trying another model or click "Use Direct Mode Instantly".',
+    { retryable: true },
   )
 }
 
-/** Ordered fallbacks: next fastest stable models from the live catalog. */
 export function fallbackModels(settings: AppSettings): string[] {
-  const provider = settings.provider
-  return settings.catalog[provider]
-    .map((model) => model.id)
-    .filter((id) => id && id !== settings.models[provider])
-    .sort((a, b) => rankModel(a) - rankModel(b) || versionOf(b) - versionOf(a))
-    .slice(0, MAX_MODEL_ATTEMPTS - 1)
+  return buildModelChain(settings).slice(1)
 }
 
 export async function generateDoc(
@@ -592,24 +662,31 @@ export async function generateDoc(
   brand: BrandPreset,
   onProgress?: StreamProgress,
 ): Promise<PdfDoc> {
+  const mode = detectInputMode(source, settings.inputMode)
+  const chain = buildModelChain(settings)
   const text = await callModel({
     provider: settings.provider,
     apiKey: settings.keys[settings.provider],
-    model: settings.models[settings.provider],
-    system: docSystemPrompt(),
+    model: chain[0] ?? settings.models[settings.provider],
+    system: docSystemPrompt(mode),
     user: docUserPrompt({
       source,
       language: settings.language,
       depth: settings.depth,
       includeMcqs: settings.includeMcqs,
       brand,
+      docFormat: settings.docFormat,
+      inputMode: settings.inputMode,
+      autoVisuals: settings.autoVisuals,
     }),
-    fallbackModels: fallbackModels(settings),
+    maxTokens: 12288,
+    fallbackModels: chain.slice(1),
     onProgress,
+    validateJson: true,
   })
   const doc = normalizeDoc(extractJson(text))
   if (!doc.sections.length) {
-    throw new AiError('The model returned a document with no sections.', 'Try again with a little more source text.')
+    throw new AiError('Could not build sections from that input.', 'Add a bit more detail and try again.')
   }
   return doc
 }
@@ -620,24 +697,28 @@ export async function generateCarousel(
   brand: BrandPreset,
   onProgress?: StreamProgress,
 ): Promise<Carousel> {
+  const chain = buildModelChain(settings)
   const text = await callModel({
     provider: settings.provider,
     apiKey: settings.keys[settings.provider],
-    model: settings.models[settings.provider],
-    system: carouselSystemPrompt(),
+    model: chain[0] ?? settings.models[settings.provider],
+    system: carouselSystemPrompt(settings.slideFormat),
     user: carouselUserPrompt({
       source,
       language: settings.language,
       slideCount: settings.slideCount,
       brand,
+      slideFormat: settings.slideFormat,
+      autoVisuals: settings.autoVisuals,
     }),
-    maxTokens: 4096,
-    fallbackModels: fallbackModels(settings),
+    maxTokens: 6144,
+    fallbackModels: chain.slice(1),
     onProgress,
+    validateJson: true,
   })
   const carousel = normalizeCarousel(extractJson(text))
   if (!carousel.slides.length) {
-    throw new AiError('The model returned no slides.', 'Try again with a clearer topic or a longer transcript.')
+    throw new AiError('Could not build slides from that input.', 'Try a clearer topic or longer brief.')
   }
   return carousel
 }
@@ -656,11 +737,12 @@ const NON_CHAT_PATTERN = /(embedding|image|imagen|audio|tts|veo|aqa|gemma)/i
 /** Lower is better. Stable Flash wins, preview/reasoning models sink. */
 export function rankModel(id: string): number {
   const name = id.toLowerCase().replace(/^models\//, '')
+  if (NON_CHAT_PATTERN.test(name)) return 60
   if (PREVIEW_PATTERN.test(name)) return 40
   if (/flash-lite/.test(name)) return 1
   if (/flash/.test(name)) return 0
-  if (NON_CHAT_PATTERN.test(name)) return 60
-  if (/(pro|ultra)/.test(name)) return 20
+  if (/(sonnet|haiku)/.test(name)) return 0
+  if (/(pro|ultra|opus)/.test(name)) return 20
   return 10
 }
 
@@ -674,62 +756,101 @@ function versionOf(id: string): number {
 function modelNote(id: string): string {
   const name = id.toLowerCase()
   if (PREVIEW_PATTERN.test(name)) return 'Preview — can be overloaded'
-  if (/flash-lite/.test(name)) return 'Fastest · low cost'
-  if (/flash/.test(name)) return 'Fast · stable'
-  if (/(pro|ultra)/.test(name)) return 'Reasoning · slower'
+  if (/flash-lite|haiku/.test(name)) return 'Fastest · low cost'
+  if (/flash|sonnet/.test(name)) return 'Fast · stable'
+  if (/(pro|ultra|opus)/.test(name)) return 'Reasoning · slower'
   return 'Text model'
 }
 
-/** The model a fresh install (or an empty selection) should land on. */
 export function pickDefaultModel(models: ModelOption[]): string {
   return models[0]?.id ?? ''
 }
 
+interface RawProviderModel {
+  name?: string
+  id?: string
+  display_name?: string
+  displayName?: string
+  supportedGenerationMethods?: string[]
+}
+
+async function fetchRawGeminiModels(apiKey: string, signal?: AbortSignal): Promise<RawProviderModel[]> {
+  const raw: RawProviderModel[] = []
+  let pageToken: string | undefined
+  for (let page = 0; page < 3; page += 1) {
+    const url = proxyOn() ? new URL(proxyUrl('/models')) : new URL(`${GEMINI_BASE}/models`)
+    url.searchParams.set('pageSize', '200')
+    if (pageToken) url.searchParams.set('pageToken', pageToken)
+    const response = await fetch(url.toString(), {
+      headers: proxyOn() ? proxyHeaders() : { 'x-goog-api-key': apiKey },
+      signal,
+    })
+    if (!response.ok) throw await failureMessage(response, 'gemini')
+    const data = (await response.json()) as {
+      models?: RawProviderModel[]
+      nextPageToken?: string
+    }
+    raw.push(...(data.models ?? []))
+    pageToken = data.nextPageToken
+    if (!pageToken) break
+  }
+  return raw
+}
+
+/** Discovers image-capable Gemini/Imagen models available on the user's account. */
+export async function listImageModels(apiKey: string): Promise<{ id: string; mode: 'chat' | 'predict' }[]> {
+  const cacheKey = proxyOn() ? '__proxy__' : apiKey.trim()
+  if (!cacheKey) return []
+  if (cachedImageModels && cachedImageModels.key === cacheKey) return cachedImageModels.models
+
+  try {
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => controller.abort(), 12_000)
+    const raw = await fetchRawGeminiModels(apiKey, controller.signal).finally(() => window.clearTimeout(timer))
+    const found: { id: string; mode: 'chat' | 'predict' }[] = []
+    for (const model of raw) {
+      const id = (model.id ?? model.name ?? '').replace(/^models\//, '').trim()
+      if (!id) continue
+      const methods = model.supportedGenerationMethods ?? []
+      if (/imagen/i.test(id) && (methods.includes('predict') || !methods.length)) {
+        found.push({ id, mode: 'predict' })
+      } else if (/image/i.test(id) && methods.includes('generateContent')) {
+        found.push({ id, mode: 'chat' })
+      }
+    }
+    found.sort((a, b) => versionOf(b.id) - versionOf(a.id))
+    cachedImageModels = { key: cacheKey, models: found }
+    return found
+  } catch {
+    return []
+  }
+}
+
 export async function listModels(provider: ProviderId, apiKey: string): Promise<ModelOption[]> {
-  if (!apiKey.trim()) {
+  if (!apiKey.trim() && !(proxyOn() && provider === 'gemini')) {
     throw new AiError('Add an API key first.', 'The model list is read live from the provider.')
   }
 
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), 20_000)
-  const raw: { name?: string; id?: string; display_name?: string; displayName?: string; supportedGenerationMethods?: string[] }[] = []
+  const raw: RawProviderModel[] = []
 
   try {
     if (provider === 'gemini') {
-      let pageToken: string | undefined
-      for (let page = 0; page < 3; page += 1) {
-        const url = new URL(`${GEMINI_BASE}/models`)
-        url.searchParams.set('pageSize', '200')
-        if (pageToken) url.searchParams.set('pageToken', pageToken)
-        const response = await fetch(url.toString(), {
-          headers: { 'x-goog-api-key': apiKey },
-          signal: controller.signal,
-        })
-        if (!response.ok) throw await failureMessage(response, provider)
-        const data = (await response.json()) as {
-          models?: typeof raw
-          nextPageToken?: string
-        }
-        raw.push(...(data.models ?? []))
-        pageToken = data.nextPageToken
-        if (!pageToken) break
-      }
+      raw.push(...(await fetchRawGeminiModels(apiKey, controller.signal)))
     } else {
       const response = await fetch(`${ANTHROPIC_MODELS}?limit=100`, {
         headers: anthropicHeaders(apiKey),
         signal: controller.signal,
       })
       if (!response.ok) throw await failureMessage(response, provider)
-      const data = (await response.json()) as { models?: typeof raw }
-      raw.push(...(data.models ?? []))
+      const data = (await response.json()) as { data?: RawProviderModel[]; models?: RawProviderModel[] }
+      raw.push(...(data.data ?? data.models ?? []))
     }
   } catch (error) {
     if (error instanceof AiError) throw error
     if (controller.signal.aborted) {
-      throw new AiError(
-        'Loading the model list timed out.',
-        'Check your connection, then hit Refresh again.',
-      )
+      throw new AiError('Loading the model list timed out.', 'Check your connection, then hit Refresh again.')
     }
     throw error
   } finally {
@@ -738,9 +859,9 @@ export async function listModels(provider: ProviderId, apiKey: string): Promise<
 
   const models = raw
     .filter((model) => {
-      // Gemini only lists generateContent models; other keys may list embeddings.
       if (provider === 'gemini') {
-        return Boolean(model.supportedGenerationMethods?.includes('generateContent'))
+        const id = (model.id ?? model.name ?? '').toLowerCase()
+        return Boolean(model.supportedGenerationMethods?.includes('generateContent')) && !NON_CHAT_PATTERN.test(id)
       }
       return !model.supportedGenerationMethods || model.supportedGenerationMethods.includes('generateContent')
     })
@@ -755,7 +876,7 @@ export async function listModels(provider: ProviderId, apiKey: string): Promise<
     (a, b) => rankModel(a.id) - rankModel(b.id) || versionOf(b.id) - versionOf(a.id) || a.id.localeCompare(b.id),
   )
 
-  if (!models.length) throw new AiError('The provider returned no usable text models.')
+  if (!models.length) throw new AiError('No compatible text models found on this account.')
   if (provider === 'gemini') {
     models[0] = { ...models[0], note: 'Recommended · fastest stable Flash' }
   }

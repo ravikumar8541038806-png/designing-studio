@@ -1,7 +1,40 @@
 import { useRef } from 'react'
-import { Button, Field, SectionLabel, Segmented, TextArea } from './ui'
-import { DEPTH_OPTIONS, LANGUAGES, providerPreset } from '../theme/presets'
-import type { AppSettings, StudioTab } from '../types'
+import { Button, Field, SectionLabel, Segmented, TextArea, Toggle } from './ui'
+import { DEPTH_OPTIONS, DOC_FORMATS, LANGUAGES, SLIDE_FORMATS } from '../theme/presets'
+import { detectInputMode } from '../lib/prompts'
+import { proxyOn } from '../lib/proxy'
+import type { AppSettings, InputModeId, StudioTab } from '../types'
+
+const STARTER_PROMPTS: Record<StudioTab, { label: string; prompt: string }[]> = {
+  pdf: [
+    {
+      label: 'Global Climate Change',
+      prompt: 'Create a detailed, publication-grade PDF report on Global Climate Change covering drivers, temperature trends, ocean & cryosphere impacts, and clean energy solutions.',
+    },
+    {
+      label: 'SaaS Client Proposal',
+      prompt: 'Create a persuasive agency redesign & growth proposal for a B2B SaaS client with deliverables, timeline, ROI metrics, and pricing tiers.',
+    },
+    {
+      label: 'Coaching Notes',
+      prompt: 'Create structured coaching revision notes on Macroeconomics & Monetary Policy with key terms, comparison tables, and practice MCQs.',
+    },
+  ],
+  carousel: [
+    {
+      label: 'Climate Facts Deck',
+      prompt: 'Create a compelling visual carousel explaining 5 critical facts about Global Climate Change and the clean energy transition.',
+    },
+    {
+      label: 'SaaS Pitch Deck',
+      prompt: 'Create an executive 16:9 client pitch deck for a brand identity & digital product overhaul, highlighting problem, strategy, timeline, and ROI.',
+    },
+    {
+      label: 'Freelance Pricing',
+      prompt: '5 pricing mistakes that cap a freelance designer’s income — and how to switch to value-based retainers.',
+    },
+  ],
+}
 
 export function SourcePanel({
   mode,
@@ -31,37 +64,58 @@ export function SourcePanel({
   onExtractPdf: (file: File) => void
   extracting: { page: number; total: number } | null
   extracted: string | null
-  /** Characters streamed so far, shown live on the generate button. */
   progress?: number | null
   onUseDirectMode?: () => void
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
-  const provider = providerPreset(settings.provider)
-  const hasKey = Boolean(settings.keys[settings.provider]?.trim())
+  const hasKey =
+    Boolean(settings.keys[settings.provider]?.trim()) || (proxyOn() && settings.provider === 'gemini')
   const words = source.trim() ? source.trim().split(/\s+/).length : 0
   const direct = settings.directMode
+  const detectedMode = detectInputMode(source, settings.inputMode)
+
   const actionLabel = direct
     ? mode === 'pdf'
-      ? 'Render instantly'
-      : 'Build carousel now'
+      ? 'Format Notes Instantly'
+      : 'Build Slides Instantly'
     : mode === 'pdf'
-      ? 'Structure document'
-      : 'Generate carousel'
+      ? detectedMode === 'prompt'
+        ? 'Create Publication PDF'
+        : 'Design & Structure PDF'
+      : settings.slideFormat === 'deck'
+        ? 'Generate Pitch Deck'
+        : 'Generate Carousel'
 
   return (
     <section className="source-block">
-      <SectionLabel action={<span className="mini-counter">{words} words</span>}>Source material</SectionLabel>
+      <SectionLabel action={<span className="mini-counter">{words} words</span>}>
+        Prompt or Source Notes
+      </SectionLabel>
 
       <TextArea
         value={source}
         onChange={onSourceChange}
-        rows={mode === 'pdf' ? 9 : 7}
+        rows={mode === 'pdf' ? 7 : 6}
         placeholder={
           mode === 'pdf'
-            ? 'Paste a transcript, lecture notes, a chapter or raw research…'
-            : 'Paste the topic, transcript or article you want turned into slides…'
+            ? 'Write a prompt (e.g. “Create a detailed PDF on Global Climate Change”) OR paste your raw notes, transcript, or article…'
+            : 'Describe your carousel / pitch deck topic OR paste your outline…'
         }
       />
+
+      <div className="prompt-chips" aria-label="Quick starter prompts">
+        {STARTER_PROMPTS[mode].map((item) => (
+          <button
+            key={item.label}
+            type="button"
+            className="prompt-chip"
+            onClick={() => onSourceChange(item.prompt)}
+            title={item.prompt}
+          >
+            ✦ {item.label}
+          </button>
+        ))}
+      </div>
 
       <div className="pdf-row">
         <input
@@ -76,16 +130,56 @@ export function SourcePanel({
           }}
         />
         <Button variant="ghost" icon="upload" onClick={() => fileRef.current?.click()} disabled={Boolean(extracting)}>
-          {extracting ? 'Reading…' : 'Extract PDF text'}
+          {extracting ? 'Reading…' : 'Import PDF text'}
         </Button>
         <span className="pdf-row__hint">
           {extracting
             ? `Page ${extracting.page} of ${extracting.total}`
             : extracted
               ? extracted
-              : 'Runs in your browser'}
+              : 'Runs locally in browser'}
         </span>
       </div>
+
+      {mode === 'pdf' ? (
+        <>
+          <Field label="Input handling">
+            <Segmented<InputModeId>
+              ariaLabel="Input handling"
+              value={settings.inputMode}
+              onChange={(value) => onPatch({ inputMode: value })}
+              options={[
+                { value: 'auto', label: `Auto (${detectedMode === 'prompt' ? 'Brief' : 'Notes'})` },
+                { value: 'prompt', label: 'Expand Prompt' },
+                { value: 'source', label: 'Format Notes' },
+              ]}
+            />
+          </Field>
+
+          <Field label="Publication style">
+            <select
+              className="select"
+              value={settings.docFormat}
+              onChange={(event) => onPatch({ docFormat: event.target.value as AppSettings['docFormat'] })}
+            >
+              {DOC_FORMATS.map((fmt) => (
+                <option key={fmt.id} value={fmt.id}>
+                  {fmt.label} — {fmt.hint}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </>
+      ) : (
+        <Field label="Output format">
+          <Segmented
+            ariaLabel="Slide format"
+            value={settings.slideFormat}
+            onChange={(value) => onPatch({ slideFormat: value })}
+            options={SLIDE_FORMATS.map((fmt) => ({ value: fmt.id, label: fmt.label }))}
+          />
+        </Field>
+      )}
 
       <Field label="Language">
         <Segmented
@@ -115,12 +209,12 @@ export function SourcePanel({
             />
             <span>
               <strong>Practice MCQs + answer key</strong>
-              <em>Adds a question section at the end of the document.</em>
+              <em>Ideal for coaching notes &amp; study guides.</em>
             </span>
           </label>
         </>
       ) : (
-        <Field label={`Slides — ${settings.slideCount}`} hint="Hook, body and CTA are generated to fit exactly.">
+        <Field label={`Slides — ${settings.slideCount}`} hint="Hook, body and CTA are balanced to fit cleanly.">
           <div className="slider-row">
             <input
               type="range"
@@ -136,6 +230,15 @@ export function SourcePanel({
         </Field>
       )}
 
+      {!direct ? (
+        <Toggle
+          label="Auto-generate AI visuals & cover"
+          description="Automatically renders planned hero cover art and section illustrations."
+          checked={settings.autoVisuals}
+          onChange={(value) => onPatch({ autoVisuals: value })}
+        />
+      ) : null}
+
       <div className="direct-row">
         <button
           type="button"
@@ -143,12 +246,12 @@ export function SourcePanel({
           aria-checked={direct}
           className={`direct-toggle${direct ? ' is-on' : ''}`}
           onClick={() => onPatch({ directMode: !direct })}
-          title="Parse the pasted text in this browser — no API call, no waiting"
+          title="Format pasted text locally in this browser — zero API calls"
         >
           <span className="direct-toggle__dot" aria-hidden="true" />
           <span>Direct Mode (No AI)</span>
         </button>
-        <span className="direct-row__hint">{direct ? 'Instant · zero API calls' : 'AI structuring'}</span>
+        <span className="direct-row__hint">{direct ? 'Instant · offline' : 'Smart AI routing'}</span>
       </div>
 
       <div className="generate-block">
@@ -161,30 +264,30 @@ export function SourcePanel({
         >
           {generating
             ? direct
-              ? 'Rendering…'
+              ? 'Formatting…'
               : progress
-                ? `${mode === 'pdf' ? 'Structuring' : 'Writing'}… ${progress.toLocaleString()} chars received`
-                : 'Connecting…'
+                ? `Designing… ${progress.toLocaleString()} chars`
+                : 'Drafting publication…'
             : actionLabel}
         </Button>
         {direct ? (
           <div className="generate-meta">
-            <span className="generate-meta__ok">Parsed locally — no key needed</span>
+            <span className="generate-meta__ok">Offline formatter active</span>
             <button type="button" className="link-btn" onClick={onOpenSettings}>
-              Output settings
+              AI Settings
             </button>
           </div>
         ) : (
           <div className="generate-meta">
             <button type="button" className="link-btn" onClick={onOpenSettings}>
-              {provider.short} · {settings.models[settings.provider] || 'no model'}
+              {hasKey ? 'AI Auto-Routing active' : 'Connect AI key'}
             </button>
             {!hasKey ? (
               <button type="button" className="link-btn link-btn--warn" onClick={onOpenSettings}>
                 Add API key
               </button>
             ) : (
-              <span className="generate-meta__ok">Key saved locally</span>
+              <span className="generate-meta__ok">Ready</span>
             )}
           </div>
         )}

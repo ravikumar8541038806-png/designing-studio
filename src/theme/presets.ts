@@ -1,11 +1,15 @@
 import type {
+  AspectRatioId,
+  DocFormatId,
   FontPairingId,
   HeaderStyleId,
   LanguageId,
   LayoutId,
   ModelOption,
   ProviderId,
+  SlideFormatId,
   SlideLayoutId,
+  VisualStyleId,
 } from '../types'
 
 export interface LayoutPreset {
@@ -305,13 +309,84 @@ export const DEFAULT_CATALOG: Record<ProviderId, ModelOption[]> = {
   gemini: [
     { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', note: 'Recommended · fastest stable Flash' },
     { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite', note: 'Fastest · low cost' },
+    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', note: 'Fast · reliable fallback' },
     { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', note: 'Reasoning · slower' },
   ],
   anthropic: [
-    { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', note: 'Balanced drafting' },
-    { id: 'claude-opus-5-5', label: 'Claude Opus 5.5', note: 'Deepest reasoning' },
-    { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', note: 'Fastest' },
+    { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', note: 'Balanced drafting' },
+    { id: 'claude-3-7-sonnet-latest', label: 'Claude 3.7 Sonnet', note: 'Deep reasoning' },
+    { id: 'claude-3-5-haiku-latest', label: 'Claude 3.5 Haiku', note: 'Fastest' },
   ],
+}
+
+export interface VisualStylePreset {
+  id: VisualStyleId
+  label: string
+  hint: string
+  directive: string
+}
+
+export const VISUAL_STYLES: VisualStylePreset[] = [
+  {
+    id: 'photorealistic',
+    label: 'Photorealistic HD',
+    hint: 'Editorial photography & cinematic lighting',
+    directive:
+      'photorealistic editorial photography, National Geographic quality, dramatic natural lighting, sharp focus, rich natural depth, clean framing, zero text, zero letters, zero watermarks',
+  },
+  {
+    id: '3d-illustration',
+    label: '3D Illustration',
+    hint: 'Crisp studio-lit 3D render & cutaways',
+    directive:
+      'clean modern 3D isometric studio render, soft global illumination, tactile matte and glass materials, crisp high-resolution editorial artwork, zero text, zero letters, zero watermarks',
+  },
+  {
+    id: '2d-vector',
+    label: '2D Vector Art',
+    hint: 'Modern flat editorial & geometric art',
+    directive:
+      'sleek modern flat 2D editorial vector illustration, harmonious publication palette, clean geometric shapes, refined shading, crisp composition, zero text, zero letters, zero watermarks',
+  },
+  {
+    id: 'textbook-diagram',
+    label: 'Textbook Plate',
+    hint: 'Clean scientific cutaway on pure white',
+    directive:
+      'clean scientific textbook illustration on a pure plain white background, anatomically and structurally accurate, soft studio lighting, crisp edges, zero text, zero letters, zero numbers, zero arrows, zero watermarks',
+  },
+  {
+    id: 'cinematic-cover',
+    label: 'Cinematic Hero',
+    hint: 'Atmospheric cover art with rich depth',
+    directive:
+      'cinematic wide editorial cover visual, atmospheric lighting, rich colour grading, balanced negative space for typography, high-resolution publication artwork, zero text, zero letters, zero watermarks',
+  },
+]
+
+export const ASPECT_RATIOS: { id: AspectRatioId; label: string }[] = [
+  { id: '16:9', label: '16:9 Wide' },
+  { id: '4:3', label: '4:3 Classic' },
+  { id: '1:1', label: '1:1 Square' },
+  { id: '3:4', label: '3:4 Portrait' },
+]
+
+export const DOC_FORMATS: { id: DocFormatId; label: string; hint: string }[] = [
+  { id: 'auto', label: 'Smart Auto', hint: 'Adapts structure to your prompt or notes' },
+  { id: 'report', label: 'Report / eBook', hint: 'Executive insights, data charts, visuals & key stats' },
+  { id: 'coaching', label: 'Coaching Notes', hint: 'Key terms, tables, memory callouts & practice MCQs' },
+  { id: 'proposal', label: 'Proposal / Case Study', hint: 'Problem, solution, timeline, metrics & deliverables' },
+  { id: 'playbook', label: 'Playbook / Guide', hint: 'Actionable frameworks, step lists & checklists' },
+]
+
+export const SLIDE_FORMATS: { id: SlideFormatId; label: string; dimensions: string }[] = [
+  { id: 'portrait', label: '4:5 Carousel', dimensions: '1080 × 1350' },
+  { id: 'square', label: '1:1 Square', dimensions: '1080 × 1080' },
+  { id: 'deck', label: '16:9 Pitch Deck', dimensions: '1920 × 1080' },
+]
+
+export function visualStylePreset(id?: VisualStyleId): VisualStylePreset {
+  return VISUAL_STYLES.find((s) => s.id === id) ?? VISUAL_STYLES[0]
 }
 
 export const DEPTH_OPTIONS = [

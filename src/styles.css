@@ -3577,87 +3577,6 @@ a:hover {
   }
 }
 
-/* =========================================================================
-   Print
-   ========================================================================= */
-@media print {
-  @page {
-    size: A4 portrait;
-    margin: 0;
-  }
-
-  html,
-  body {
-    background: #fff !important;
-    height: auto !important;
-  }
-
-  .rail,
-  .topbar,
-  .pane--left,
-  .pane--right,
-  .preview-bar,
-  .preview-toolbar,
-  .paper-measure,
-  .toasts,
-  .modal-backdrop {
-    display: none !important;
-  }
-
-  .app-shell,
-  .workarea,
-  .workspace,
-  .studio-grid,
-  .pane,
-  .pane--center,
-  .preview-host,
-  .preview-stage,
-  .preview-scroll,
-  .zoom-frame,
-  .zoom-content,
-  .doc-pages {
-    display: block !important;
-    position: static !important;
-    height: auto !important;
-    width: auto !important;
-    max-height: none !important;
-    overflow: visible !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    gap: 0 !important;
-    transform: none !important;
-    background: none !important;
-    border: 0 !important;
-    box-shadow: none !important;
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-  }
-
-  .paper-page {
-    width: 210mm !important;
-    height: 297mm !important;
-    margin: 0 auto !important;
-    box-shadow: none !important;
-    border-radius: 0 !important;
-    break-after: page;
-    page-break-after: always;
-  }
-
-  .paper-page:last-child {
-    break-after: auto;
-    page-break-after: auto;
-  }
-
-  .blk-table,
-  .callout,
-  .mcq,
-  .blk-terms__row,
-  .quote {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-}
-
 /* Direct Mode toggle + model notes */
 .direct-row {
   display: flex;
@@ -5381,55 +5300,6 @@ a:hover {
 }
 
 /* =========================================================================
-   V2 · Print: full-bleed themed pages, A4, zero margins
-   ========================================================================= */
-@media print {
-  @page {
-    size: A4;
-    margin: 0;
-  }
-
-  html,
-  body {
-    background: #fff !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
-
-  .paper-page {
-    width: 210mm !important;
-    height: 297mm !important;
-    background-color: var(--paper-bg) !important;
-    color: var(--paper-ink) !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-    margin: 0 auto !important;
-    box-shadow: none !important;
-    border-radius: 0 !important;
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-
-  .doc-pages {
-    background: none !important;
-  }
-
-  .blk-table,
-  .blk-table tr,
-  .blk-table thead,
-  .callout,
-  .mcq,
-  .blk-terms__row,
-  .quote,
-  .chart-block,
-  .img-block,
-  .tl__item {
-    break-inside: avoid;
-    page-break-inside: avoid;
-  }
-}
-
-/* =========================================================================
    V2 · Measured two-column textbook flow
    ========================================================================= */
 [data-layout='two-column-textbook'] .paper-flow {
@@ -5583,8 +5453,8 @@ a:hover {
   max-width: 100%;
 }
 
-/* Publication typography: 10.5–11 pt body, 1.55 leading, tabular figures. */
-.paper-page {
+/* Publication typography: shared identically by both live pages and hidden measure container. */
+:is(.paper-page, .paper--measure) {
   font-size: 14.4px;
   line-height: 1.55;
   font-variant-numeric: tabular-nums lining-nums;
@@ -5807,11 +5677,11 @@ a:hover {
 }
 
 /* -------------------------------------------------------------------------
-   V3 · Vector print pipeline — one A4 sheet per page, zero trim bleed
+   V3 · Authoritative Vector Print Pipeline — one A4 sheet per page, zero bleed
    ------------------------------------------------------------------------- */
 @media print {
   @page {
-    size: A4;
+    size: A4 portrait;
     margin: 0;
   }
 
@@ -5819,18 +5689,59 @@ a:hover {
   body {
     margin: 0 !important;
     padding: 0 !important;
+    height: auto !important;
     background: #fff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
+  .rail,
+  .topbar,
+  .pane--left,
+  .pane--right,
+  .preview-bar,
+  .preview-toolbar,
+  .paper-measure,
+  .toasts,
+  .modal-backdrop,
   .studio-tabs,
   .vs-tabs,
-  .preview-toolbar {
+  .no-export {
     display: none !important;
+  }
+
+  .app-shell,
+  .workarea,
+  .workspace,
+  .studio-grid,
+  .pane,
+  .pane--center,
+  .preview-host,
+  .preview-stage,
+  .preview-scroll,
+  .zoom-frame,
+  .zoom-content,
+  .doc-pages {
+    display: block !important;
+    position: static !important;
+    height: auto !important;
+    width: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    gap: 0 !important;
+    transform: none !important;
+    background: none !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
   }
 
   .paper-page {
     width: 210mm !important;
-    height: 297mm !important;
+    height: 296.5mm !important;
     box-sizing: border-box !important;
     overflow: hidden !important;
     margin: 0 !important;
@@ -5873,6 +5784,7 @@ a:hover {
   .chart-block,
   .img-block,
   .blk--image,
+  .stats-grid,
   .tl__item,
   .blk-terms__row {
     break-inside: avoid !important;
@@ -6265,15 +6177,7 @@ a:hover {
   text-align: center;
 }
 
-/* Neutralise the earlier forced break-after: only break-before is used, so no
-   browser can emit a leading blank sheet. */
-@media print {
-  .paper-page,
-  .paper-page:last-child {
-    break-after: auto !important;
-    page-break-after: auto !important;
-  }
-}
+/* Print break-after safety handled inside V3 @media print block above. */
 
 /* AI error banner with the one-click offline fallback */
 .error-box {
@@ -6388,4 +6292,642 @@ a:hover {
 .segmented--mini .segmented__item {
   padding: 2px 7px;
   font-size: 10.5px;
+}
+
+/* Settings — Cloudflare proxy group */
+.proxy-block {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 10px 0 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(59, 91, 219, 0.22);
+  border-radius: 16px;
+  background: rgba(59, 91, 219, 0.05);
+}
+
+/* =========================================================================
+   V4 · Publication Visuals, Cover Hero, Stats Cards, Pitch Decks & Compact Rail
+   ========================================================================= */
+
+/* Compact collapsible rail for maximum preview room */
+.app-shell.is-rail-compact {
+  grid-template-columns: 74px minmax(0, 1fr);
+}
+
+.app-shell.is-rail-compact .rail {
+  padding: 16px 10px;
+  align-items: stretch;
+}
+
+.app-shell.is-rail-compact .rail__brand {
+  justify-content: center;
+  padding: 0;
+}
+
+.app-shell.is-rail-compact .rail__wordmark,
+.app-shell.is-rail-compact .rail__label,
+.app-shell.is-rail-compact .rail__item span,
+.app-shell.is-rail-compact .rail__foot {
+  display: none;
+}
+
+.app-shell.is-rail-compact .rail__item {
+  justify-content: center;
+  padding: 11px 0;
+}
+
+.rail__collapse {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  border: 1px solid rgba(16, 24, 40, 0.08);
+  background: rgba(255, 255, 255, 0.65);
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: none;
+}
+
+.app-shell.is-rail-compact .rail__collapse {
+  margin: 6px auto 0;
+}
+
+/* Undo / Redo + preview bar tools */
+.preview-bar__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid rgba(16, 24, 40, 0.08);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.preview-bar__btn:hover:not(:disabled) {
+  background: #fff;
+  border-color: var(--line-strong);
+}
+
+.preview-bar__btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Quick-start prompt chips in SourcePanel */
+.prompt-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.prompt-chip {
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(16, 24, 40, 0.1);
+  background: rgba(255, 255, 255, 0.68);
+  color: var(--ink-2);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.prompt-chip:hover {
+  background: #fff;
+  border-color: rgba(91, 108, 255, 0.45);
+  color: var(--brand-deep);
+}
+
+/* Hover micro-toolbar on blocks */
+.blk-wrap {
+  position: relative;
+}
+
+.blk-hover-tools {
+  position: absolute;
+  top: -10px;
+  right: 2px;
+  z-index: 10;
+  display: flex;
+  gap: 3px;
+  padding: 2px 4px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.88);
+  box-shadow: 0 6px 16px -6px rgba(2, 6, 23, 0.65);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s ease;
+}
+
+.blk-wrap:hover .blk-hover-tools,
+.blk-wrap:focus-within .blk-hover-tools {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.blk-tool {
+  border: 0;
+  background: transparent;
+  color: #f8fafc;
+  font-size: 10px;
+  font-weight: 650;
+  padding: 2px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.blk-tool:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.blk-tool:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.blk-tool--danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.55);
+}
+
+/* KPI / Stats Infographic Cards */
+.blk--stats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stats-title {
+  font-family: var(--font-head);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--paper-muted);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.stats-grid[data-count='2'],
+.stats-grid[data-count='4'] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+[data-layout='two-column-textbook'] .stats-grid,
+.vs-preview .stats-grid {
+  grid-template-columns: 1fr;
+}
+
+[data-layout='two-column-textbook'] .stat-card__value,
+.vs-preview .stat-card__value {
+  font-size: 20px;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 13px;
+  border-radius: 10px;
+  border: 1px solid var(--paper-line);
+  border-top: 3px solid var(--brand);
+  background: var(--paper-soft);
+  min-width: 0;
+}
+
+.stat-card__value {
+  font-family: var(--font-head);
+  font-size: 22px;
+  line-height: 1.1;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--paper-ink);
+  white-space: nowrap;
+}
+
+.stat-card__label {
+  font-size: 10.6px;
+  line-height: 1.35;
+  color: var(--paper-muted);
+  font-weight: 550;
+}
+
+.stat-card__delta {
+  align-self: flex-start;
+  margin-top: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand) 14%, transparent);
+  color: var(--brand);
+  white-space: nowrap;
+}
+
+/* Constrain visuals cleanly so no single figure can ever clip past A4 body height */
+.paper-page .img-block__img {
+  max-height: 410px;
+}
+
+.img-block__img--cover {
+  object-fit: cover;
+  aspect-ratio: 16 / 9;
+}
+
+.paper-page .diagram-svg {
+  max-height: 440px;
+}
+
+.chart-block__note {
+  margin-top: 4px;
+  padding-top: 5px;
+  border-top: 1px dashed var(--paper-line);
+  font-size: 9.2px;
+  line-height: 1.4;
+  color: var(--paper-muted);
+}
+
+.img-shimmer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 150px;
+  padding: 18px;
+  border-radius: 10px;
+  border: 1px dashed var(--paper-line);
+  background: linear-gradient(110deg, var(--paper-soft) 30%, color-mix(in srgb, var(--brand) 10%, var(--paper-soft)) 50%, var(--paper-soft) 70%);
+  background-size: 200% 100%;
+  animation: cf-shimmer 1.6s linear infinite;
+  color: var(--paper-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+
+@keyframes cf-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+.img-block__empty {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.img-block__empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+
+/* Cover Hero Image & Toolbar */
+.cover__top-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.cover-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.cover-tool {
+  border: 1px solid rgba(16, 24, 40, 0.14);
+  background: rgba(255, 255, 255, 0.84);
+  color: #101828;
+  font-size: 9.5px;
+  font-weight: 650;
+  padding: 3px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+
+.cover-tool:hover:not(:disabled) {
+  background: #ffffff;
+  border-color: var(--brand);
+}
+
+.cover-tool:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.cover__hero {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.cover__hero--banner .cover__art {
+  width: 100%;
+  height: 290px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--paper-line);
+  box-shadow: 0 18px 40px -24px rgba(15, 23, 42, 0.45);
+}
+
+.cover__hero--banner .cover__art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.cover__hero--side {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  align-items: center;
+  gap: 28px;
+}
+
+.cover__hero--side .cover__main {
+  max-width: 100%;
+}
+
+.cover__hero--side .cover__title {
+  font-size: 40px;
+}
+
+.cover__hero--side .cover__art {
+  width: 100%;
+  height: 390px;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--paper-line);
+  box-shadow: 0 22px 46px -22px rgba(15, 23, 42, 0.48);
+}
+
+.cover__hero--side .cover__art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.cover__art--loading .img-shimmer {
+  height: 100%;
+}
+
+.cover--full .cover__bg-media {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.cover--full .cover__bg-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.cover--full .cover__bg-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(10, 14, 24, 0.56) 0%,
+    rgba(10, 14, 24, 0.72) 55%,
+    rgba(10, 14, 24, 0.86) 100%
+  );
+}
+
+.cover--full .cover__title,
+.cover--full .cover__sub,
+.cover--full .cover__eyebrow,
+.cover--full .brandmark__name,
+.cover--full .cover__meta {
+  color: #f8fafc;
+}
+
+.cover--full .cover__sub,
+.cover--full .cover__meta {
+  opacity: 0.88;
+}
+
+/* Carousel & 16:9 Pitch Deck Formats */
+.slide[data-format='square'] {
+  padding: 58px 72px 50px;
+}
+
+.slide[data-format='square'] .slide__headline {
+  font-size: 64px;
+}
+
+.slide[data-format='square'] .slide--hook .slide__headline,
+.slide[data-format='square'] .slide--cta .slide__headline {
+  font-size: 72px;
+}
+
+.slide[data-format='deck'] {
+  padding: 60px 96px 52px;
+}
+
+.slide[data-format='deck'] .slide__headline {
+  font-size: 82px;
+}
+
+.slide[data-format='deck'] .slide--hook .slide__headline {
+  font-size: 96px;
+}
+
+.slide[data-format='deck'] .slide__subhook {
+  font-size: 32px;
+}
+
+.slide[data-format='deck'] .slide__points li {
+  font-size: 31px;
+}
+
+.slide__content-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  justify-content: center;
+}
+
+.slide__content-wrap--split {
+  display: grid;
+  grid-template-columns: 1.12fr 0.88fr;
+  gap: 44px;
+  align-items: center;
+}
+
+.slide__content-wrap--top {
+  gap: 28px;
+}
+
+.slide__media {
+  width: 100%;
+  border-radius: 22px;
+  overflow: hidden;
+  border: 1.5px solid var(--s-line);
+  box-shadow: 0 24px 50px -24px rgba(0, 0, 0, 0.45);
+  background: var(--s-soft);
+}
+
+.slide__content-wrap--top .slide__media {
+  height: 360px;
+}
+
+.slide__content-wrap--split .slide__media {
+  height: 100%;
+  max-height: 620px;
+}
+
+.slide[data-format='deck'] .slide__content-wrap--split .slide__media {
+  max-height: 680px;
+}
+
+.slide__media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.slide__bg-media {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.slide__bg-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.slide__bg-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(10, 14, 24, 0.62) 0%,
+    rgba(10, 14, 24, 0.76) 55%,
+    rgba(10, 14, 24, 0.88) 100%
+  );
+}
+
+.slide--has-bg {
+  color: #f8fafc !important;
+}
+
+.slide--has-bg .slide__headline,
+.slide--has-bg .slide__points li,
+.slide--has-bg .slide__foot-handle,
+.slide--has-bg .brandmark__name {
+  color: #ffffff !important;
+}
+
+.slide--has-bg .slide__subhook,
+.slide--has-bg .slide__count,
+.slide--has-bg .slide__foot {
+  color: rgba(248, 250, 252, 0.85) !important;
+}
+
+.slide__img-loading {
+  margin-top: 16px;
+  padding: 16px 20px;
+  border-radius: 14px;
+  border: 1.5px dashed var(--s-line);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--s-muted);
+}
+
+.deck-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.deck-item__btn {
+  border: 1px solid rgba(16, 24, 40, 0.12);
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--ink-2);
+  border-radius: 7px;
+  padding: 4px 10px;
+  font-size: 10.5px;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.deck-item__btn:hover:not(:disabled) {
+  background: #fff;
+  border-color: var(--brand);
+}
+
+.deck-item__btn:disabled {
+  opacity: 0.45;
+  cursor: wait;
+}
+
+/* Settings modal advanced details */
+.settings-details {
+  border: 1px solid rgba(16, 24, 40, 0.08);
+  border-radius: 14px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.settings-details summary {
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--ink-2);
+  cursor: pointer;
+  user-select: none;
+}
+
+.settings-details[open] summary {
+  margin-bottom: 12px;
+}
+
+/* Visual Studio subtle status pill */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 650;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.1);
+  color: var(--ok);
+}
+
+.status-badge--warn {
+  background: rgba(180, 83, 9, 0.1);
+  color: var(--warn);
 }

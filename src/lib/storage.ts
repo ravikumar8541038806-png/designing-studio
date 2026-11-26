@@ -1,4 +1,5 @@
 import { uid } from './id'
+import { loadDraft, saveDraft } from './draftDb'
 import { LAYOUTS, SLIDE_LAYOUTS, DEFAULT_CATALOG } from '../theme/presets'
 import { isKnownTheme } from '../theme/themes'
 import type { AppSettings, BrandPreset, Carousel, ModelOption, PdfDoc } from '../types'
@@ -8,6 +9,7 @@ import type { AppSettings, BrandPreset, Carousel, ModelOption, PdfDoc } from '..
  * never real API models, so a catalog made only of these is replaced on load.
  */
 const LEGACY_GEMINI_IDS = new Set(['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-4-hydrogen'])
+const LEGACY_ANTHROPIC_IDS = new Set(['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5'])
 
 const SETTINGS_KEY = 'clientforge.settings.v1'
 const PDF_DRAFT_KEY = 'clientforge.draft.pdf.v1'
@@ -36,6 +38,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   keys: { gemini: '', anthropic: '' },
   models: { gemini: DEFAULT_CATALOG.gemini[0].id, anthropic: DEFAULT_CATALOG.anthropic[0].id },
   catalog: DEFAULT_CATALOG,
+  autoModel: true,
+  autoVisuals: true,
+  docFormat: 'auto',
+  inputMode: 'auto',
+  slideFormat: 'portrait',
   language: 'en',
   depth: 2,
   slideCount: 7,
@@ -49,6 +56,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   fontPairing: 'inter',
   paymentLock: false,
   directMode: false,
+  proxyEnabled: false,
+  proxyUrl: '',
+  proxyToken: '',
   brands: [defaultBrand],
   activeBrandId: defaultBrand.id,
 }
@@ -104,14 +114,27 @@ export function loadSettings(): AppSettings {
     : storedGemini.length
       ? storedGemini
       : DEFAULT_CATALOG.gemini
+
+  const storedAnthropic: ModelOption[] = stored.catalog?.anthropic ?? []
+  const legacyAnthropicSeed =
+    storedAnthropic.length > 0 && storedAnthropic.some((model) => LEGACY_ANTHROPIC_IDS.has(model.id))
+  const anthropicCatalog = legacyAnthropicSeed
+    ? DEFAULT_CATALOG.anthropic
+    : storedAnthropic.length
+      ? storedAnthropic
+      : DEFAULT_CATALOG.anthropic
+
   const catalog = {
     gemini: geminiCatalog,
-    anthropic: stored.catalog?.anthropic?.length ? stored.catalog.anthropic : DEFAULT_CATALOG.anthropic,
+    anthropic: anthropicCatalog,
   }
 
   let models = { ...DEFAULT_SETTINGS.models, ...stored.models }
   if (legacyGeminiSeed && !geminiCatalog.some((model) => model.id === models.gemini)) {
     models = { ...models, gemini: DEFAULT_SETTINGS.models.gemini }
+  }
+  if (LEGACY_ANTHROPIC_IDS.has(models.anthropic)) {
+    models = { ...models, anthropic: DEFAULT_SETTINGS.models.anthropic }
   }
 
   const { layout, themeId } = migrateLayouts(stored)
@@ -169,6 +192,22 @@ export function saveCarouselDraft(carousel: Carousel): void {
   } catch {
     /* ignore quota errors */
   }
+}
+
+export async function loadDocDraftAsync(): Promise<PdfDoc | null> {
+  return loadDraft<PdfDoc>(PDF_DRAFT_KEY)
+}
+
+export async function saveDocDraftAsync(doc: PdfDoc): Promise<void> {
+  await saveDraft(PDF_DRAFT_KEY, doc)
+}
+
+export async function loadCarouselDraftAsync(): Promise<Carousel | null> {
+  return loadDraft<Carousel>(CAROUSEL_DRAFT_KEY)
+}
+
+export async function saveCarouselDraftAsync(carousel: Carousel): Promise<void> {
+  await saveDraft(CAROUSEL_DRAFT_KEY, carousel)
 }
 
 export function activeBrand(settings: AppSettings): BrandPreset {

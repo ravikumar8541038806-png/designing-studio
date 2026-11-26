@@ -1,12 +1,22 @@
+import type { SlideFormatId } from '../types'
+
 export const A4 = { width: 794, height: 1123 }
-export const SLIDE = { width: 1080, height: 1350 }
+
+export const SLIDE_DIMS: Record<SlideFormatId, { width: number; height: number; label: string }> = {
+  portrait: { width: 1080, height: 1350, label: '1080 × 1350' },
+  square: { width: 1080, height: 1080, label: '1080 × 1080' },
+  deck: { width: 1920, height: 1080, label: '1920 × 1080' },
+}
+
+export const SLIDE = SLIDE_DIMS.portrait
 
 /**
  * Vertical budget of an A4 sheet:
- * 96px running header, 50px footer, 40px bottom margin, 16px body/footer gap.
+ * 60px side padding (matches --paper-pad: 60px), 96px running header,
+ * 50px footer, 40px bottom margin, 16px body/footer gap.
  */
 export const PAPER = {
-  padX: 64,
+  padX: 60,
   headerHeight: 96,
   footerHeight: 50,
   bottomMargin: 40,
@@ -27,6 +37,10 @@ export interface FlowItem {
   sectionIndex?: number
   blockIndex?: number
   mcqIndex?: number
+  /** For auto-split large tables: inclusive start / exclusive end row indices. */
+  rowStart?: number
+  rowEnd?: number
+  isContinuation?: boolean
 }
 
 export function paginate(
@@ -48,9 +62,14 @@ export function paginate(
   for (let index = 0; index < heights.length; index += 1) {
     const height = Math.max(heights[index] || 0, 1)
     let needed = (current.length ? gap : 0) + height
-    // Never leave a section heading or the MCQ heading orphaned at the foot of a page.
+    // Keep sticky headings (and runs of consecutive sticky headings) glued to the first non-sticky block.
     if (sticky[index] && index + 1 < heights.length) {
-      needed += gap + Math.max(heights[index + 1] || 0, 1)
+      let lookahead = index + 1
+      while (lookahead < heights.length) {
+        needed += gap + Math.max(heights[lookahead] || 0, 1)
+        if (!sticky[lookahead]) break
+        lookahead += 1
+      }
     }
     if (current.length && used + needed > contentHeight) flush()
     if (current.length) used += gap

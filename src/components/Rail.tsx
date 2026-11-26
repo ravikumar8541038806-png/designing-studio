@@ -2,8 +2,8 @@ import { Icon } from './ui'
 import type { StudioTab } from '../types'
 
 const TABS: { id: StudioTab; label: string; icon: 'doc' | 'slides'; hint: string }[] = [
-  { id: 'pdf', label: 'PDF Notes & eBooks', icon: 'doc', hint: 'A4 study notes and chapters' },
-  { id: 'carousel', label: 'Social Carousels', icon: 'slides', hint: '1080 × 1350 slide decks' },
+  { id: 'pdf', label: 'PDFs & eBooks', icon: 'doc', hint: 'A4 reports, notes, eBooks and proposals' },
+  { id: 'carousel', label: 'Carousels & Decks', icon: 'slides', hint: '4:5 carousels, 1:1 posts & 16:9 pitch decks' },
 ]
 
 export function Rail({
@@ -12,12 +12,16 @@ export function Rail({
   onOpenVault,
   onOpenSettings,
   brandName,
+  compact,
+  onToggleCompact,
 }: {
   tab: StudioTab
   onTab: (tab: StudioTab) => void
   onOpenVault: () => void
   onOpenSettings: () => void
   brandName: string
+  compact?: boolean
+  onToggleCompact?: () => void
 }) {
   return (
     <aside className="rail glass">
@@ -29,6 +33,17 @@ export function Rail({
           ClientForge
           <em>Studio</em>
         </span>
+        {onToggleCompact ? (
+          <button
+            type="button"
+            className="rail__collapse"
+            onClick={onToggleCompact}
+            title={compact ? 'Expand sidebar' : 'Collapse sidebar for wider preview'}
+            aria-label={compact ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {compact ? '›' : '‹'}
+          </button>
+        ) : null}
       </div>
 
       <nav className="rail__nav" aria-label="Studios">
@@ -48,13 +63,13 @@ export function Rail({
         ))}
 
         <span className="rail__label rail__label--spaced">Workspace</span>
-        <button type="button" className="rail__item" onClick={onOpenVault}>
+        <button type="button" className="rail__item" onClick={onOpenVault} title="Client Brand Vault">
           <Icon name="vault" size={17} />
           <span>Client Brand Vault</span>
         </button>
-        <button type="button" className="rail__item" onClick={onOpenSettings}>
+        <button type="button" className="rail__item" onClick={onOpenSettings} title="AI Settings">
           <Icon name="settings" size={17} />
-          <span>API Settings</span>
+          <span>AI Settings</span>
         </button>
       </nav>
 
@@ -63,8 +78,8 @@ export function Rail({
           <span className="rail__active-label">Active brand</span>
           <span className="rail__active-name">{brandName}</span>
         </div>
-        <p className="rail__note">Keys and drafts stay in this browser. No server, no uploads.</p>
-        <span className="rail__version">V1 · Cloudflare ready</span>
+        <p className="rail__note">Drafts &amp; assets saved locally in IndexedDB.</p>
+        <span className="rail__version">Studio V2 · Ready</span>
       </div>
     </aside>
   )

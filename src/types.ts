@@ -2,6 +2,18 @@ export type ProviderId = 'gemini' | 'anthropic'
 export type StudioTab = 'pdf' | 'carousel'
 export type LanguageId = 'en' | 'hi' | 'hinglish'
 
+export type VisualStyleId =
+  | 'photorealistic'
+  | '3d-illustration'
+  | '2d-vector'
+  | 'textbook-diagram'
+  | 'cinematic-cover'
+
+export type AspectRatioId = '16:9' | '4:3' | '1:1' | '3:4'
+export type DocFormatId = 'auto' | 'report' | 'coaching' | 'proposal' | 'playbook'
+export type InputModeId = 'auto' | 'prompt' | 'source'
+export type SlideFormatId = 'portrait' | 'square' | 'deck'
+
 export type LayoutId =
   // Education & exam notes
   | 'academic-clean'
@@ -74,9 +86,16 @@ export interface BrandPreset {
 export type CalloutKind = 'fact' | 'exam' | 'note' | 'tip' | 'warning' | 'quote' | 'summary'
 export type CalloutIcon = 'spark' | 'alert' | 'bulb' | 'pin' | 'quote' | 'check' | 'book' | 'shield'
 
-export type ChartKind = 'bar' | 'line' | 'donut' | 'hcompare' | 'area' | 'compare'
+export type ChartKind = 'bar' | 'bar3d' | 'line' | 'donut' | 'hcompare' | 'area' | 'compare'
 
-export type DiagramKind = 'flow' | 'cycle' | 'mindmap' | 'labeled' | 'schematic'
+export interface StatMetric {
+  id: string
+  value: string
+  label: string
+  delta?: string
+}
+
+export type DiagramKind = 'flow' | 'cycle' | 'mindmap' | 'labeled' | 'schematic' | 'figure'
 
 export type DiagramShape = 'box' | 'pill' | 'ellipse' | 'diamond' | 'circle' | 'note'
 
@@ -160,6 +179,11 @@ export type DocBlock =
       width: number
       align: 'left' | 'center' | 'right'
       rounded: boolean
+      prompt?: string
+      style?: VisualStyleId
+      aspect?: AspectRatioId
+      fit?: 'contain' | 'cover'
+      generating?: boolean
     }
   | {
       id: string
@@ -172,6 +196,16 @@ export type DocBlock =
       values2?: number[]
       accent: string
       accent2: string
+      unit?: string
+      seriesA?: string
+      seriesB?: string
+      note?: string
+    }
+  | {
+      id: string
+      type: 'stats'
+      title: string
+      items: StatMetric[]
     }
   | {
       id: string
@@ -227,6 +261,9 @@ export interface PdfDoc {
   subtitle: string
   sections: DocSection[]
   mcqs: McqItem[]
+  coverImage?: string
+  coverImagePrompt?: string
+  coverImageLayout?: 'banner' | 'full' | 'side'
 }
 
 export type SlideKind = 'hook' | 'idea' | 'cta'
@@ -240,6 +277,9 @@ export interface Slide {
   points: string[]
   numbered: boolean
   cta: string
+  image?: string
+  imagePrompt?: string
+  imageLayout?: 'top' | 'split' | 'background'
 }
 
 export interface Carousel {
@@ -252,6 +292,16 @@ export interface AppSettings {
   keys: Record<ProviderId, string>
   models: Record<ProviderId, string>
   catalog: Record<ProviderId, ModelOption[]>
+  /** Automatically pick and fail over across the best stable models. */
+  autoModel: boolean
+  /** Automatically generate planned AI visuals/covers after structuring. */
+  autoVisuals: boolean
+  /** Document archetype for prompt-driven & formatted PDFs. */
+  docFormat: DocFormatId
+  /** Auto-detect prompt vs pasted notes, or force either workflow. */
+  inputMode: InputModeId
+  /** Output dimensions for Carousels & Pitch Decks. */
+  slideFormat: SlideFormatId
   language: LanguageId
   depth: number
   slideCount: number
@@ -270,6 +320,12 @@ export interface AppSettings {
   paymentLock: boolean
   /** Parse pasted text in the browser and skip the AI call entirely. */
   directMode: boolean
+  /** Send AI calls through the app's Cloudflare Worker so no key lives in this browser. */
+  proxyEnabled: boolean
+  /** Worker base URL. Empty means same-origin /api/ai. */
+  proxyUrl: string
+  /** Optional shared secret, only when the Worker sets PROXY_TOKEN. */
+  proxyToken: string
   brands: BrandPreset[]
   activeBrandId: string | null
 }

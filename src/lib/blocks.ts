@@ -3,10 +3,11 @@ import type { ChartKind, DocBlock, DocSection, PdfDoc, TimelineItem } from '../t
 
 export const CHART_KINDS: { id: ChartKind; label: string }[] = [
   { id: 'bar', label: 'Bar' },
+  { id: 'bar3d', label: '3D Bar' },
   { id: 'line', label: 'Line' },
+  { id: 'area', label: 'Area' },
   { id: 'donut', label: 'Pie / Donut' },
   { id: 'hcompare', label: 'Horizontal' },
-  { id: 'area', label: 'Area' },
   { id: 'compare', label: 'Comparison' },
 ]
 
@@ -41,6 +42,9 @@ export function createImageBlock(): Extract<DocBlock, { type: 'image' }> {
     width: 100,
     align: 'center',
     rounded: true,
+    fit: 'contain',
+    style: 'photorealistic',
+    aspect: '16:9',
   }
 }
 
@@ -49,11 +53,27 @@ export function createChartBlock(): ChartBlock {
     id: uid('chart'),
     type: 'chart',
     chart: 'bar',
-    title: 'Market share by segment',
+    title: 'Performance by segment',
     labels: ['Segment A', 'Segment B', 'Segment C', 'Segment D'],
     values: [42, 28, 19, 11],
     accent: '#4f6bff',
     accent2: '#f59e0b',
+    unit: '%',
+    seriesA: 'Current',
+    seriesB: 'Previous',
+  }
+}
+
+export function createStatsBlock(): Extract<DocBlock, { type: 'stats' }> {
+  return {
+    id: uid('stats'),
+    type: 'stats',
+    title: 'Key Metrics at a Glance',
+    items: [
+      { id: uid('st'), value: '+42%', label: 'Year-over-year growth', delta: '↑ Accelerating' },
+      { id: uid('st'), value: '3.4×', label: 'Efficiency gain', delta: 'Verified' },
+      { id: uid('st'), value: '98.2%', label: 'Client satisfaction', delta: 'Top quartile' },
+    ],
   }
 }
 
@@ -64,8 +84,8 @@ export function createTimelineBlock(): Extract<DocBlock, { type: 'timeline' }> {
     title: 'Timeline',
     orientation: 'vertical',
     items: [
-      { id: uid('ev'), date: '1857', title: 'First event', description: 'One line of context.' },
-      { id: uid('ev'), date: '1919', title: 'Second event', description: 'What changed and why it matters.' },
+      { id: uid('ev'), date: 'Phase 01', title: 'Discovery & Audit', description: 'Baseline review and strategic brief.' },
+      { id: uid('ev'), date: 'Phase 02', title: 'Design & Delivery', description: 'Production, refinement and final rollout.' },
     ],
   }
 }
@@ -83,7 +103,7 @@ export function createCalloutBlock(): Extract<DocBlock, { type: 'callout' }> {
 }
 
 export function newTimelineItem(): TimelineItem {
-  return { id: uid('ev'), date: 'Year', title: 'Event', description: '' }
+  return { id: uid('ev'), date: 'Phase', title: 'Milestone', description: '' }
 }
 
 export function insertBlock(doc: PdfDoc, sectionId: string, block: DocBlock): PdfDoc {

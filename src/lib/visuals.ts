@@ -1,8 +1,19 @@
-import { callModel, extractJson, fallbackModels } from './ai'
-import { createChartBlock, parseSeries } from './blocks'
-import { blockFromPreset, normalizeDiagram, presetForPrompt } from './diagrams'
+import { buildModelChain, callModel, extractJson, listImageModels } from './ai'
+import { createChartBlock, createStatsBlock, parseSeries } from './blocks'
+import { blockFromPreset, labeledFigureBlock, normalizeDiagram, presetForPrompt } from './diagrams'
 import { uid } from './id'
-import type { AppSettings, ChartKind, DiagramKind, DocBlock, PdfDoc } from '../types'
+import { visualStylePreset } from '../theme/presets'
+import { proxyHeaders, proxyOn, proxyUrl } from './proxy'
+import type {
+  AppSettings,
+  AspectRatioId,
+  ChartKind,
+  DiagramKind,
+  DocBlock,
+  PdfDoc,
+  StatMetric,
+  VisualStyleId,
+} from '../types'
 
 export class VisualError extends Error {
   hint?: string
@@ -14,64 +25,89 @@ export class VisualError extends Error {
 }
 
 export function hasAi(settings: AppSettings): boolean {
-  return (
-    !settings.directMode &&
-    Boolean(settings.keys[settings.provider]?.trim()) &&
-    Boolean(settings.models[settings.provider])
-  )
+  const credential = Boolean(settings.keys[settings.provider]?.trim()) || (proxyOn() && settings.provider === 'gemini')
+  return !settings.directMode && credential && (settings.autoModel || Boolean(settings.models[settings.provider]))
 }
 
-async function ask(settings: AppSettings, system: string, user: string, maxTokens = 2048): Promise<unknown> {
+export function hasGeminiImages(settings: AppSettings): boolean {
+  return Boolean(settings.keys.gemini?.trim()) || proxyOn()
+}
+
+async function ask(settings: AppSettings, system: string, user: string, maxTokens = 2400): Promise<unknown> {
+  const chain = buildModelChain(settings)
   const text = await callModel({
     provider: settings.provider,
     apiKey: settings.keys[settings.provider],
-    model: settings.models[settings.provider],
+    model: chain[0] ?? settings.models[settings.provider],
     system,
     user,
     maxTokens,
-    fallbackModels: fallbackModels(settings),
+    fallbackModels: chain.slice(1),
+    validateJson: true,
   })
   return extractJson(text)
 }
 
 const SYSTEM_PRINT =
-  'You are a senior textbook illustrator and print designer. You answer with a single valid JSON object only — no markdown, no code fences, no prose.'
+  'You are a senior editorial illustrator, data journalist, and publication designer. You answer with a single valid JSON object only — no markdown, no code fences, no prose.'
 
 function docContext(doc?: PdfDoc): string {
   if (!doc) return ''
   const sections = doc.sections
     .slice(0, 6)
-    .map((section) => `- ${section.heading}: ${section.blocks.map((block) => ('text' in block ? block.text : '')).join(' ').slice(0, 240)}`)
+    .map(
+      (section) =>
+        `- ${section.heading}: ${section.blocks
+          .map((block) => ('text' in block ? block.text : ''))
+          .join(' ')
+          .slice(0, 220)}`,
+    )
     .join('\n')
   return `\nDOCUMENT: ${doc.title} (${doc.eyebrow})\nSECTIONS:\n${sections}`
 }
 
 /* ------------------------------------------------------------------------- */
-/* Diagrams                                                                    */
+/* Diagrams (clean vector flows, cycles, mindmaps & real-image figures)       */
 /* ------------------------------------------------------------------------- */
 
 export function localDiagram(prompt: string, kind: DiagramKind, title?: string): DocBlock {
   const preset = presetForPrompt(prompt, kind)
   if (preset) return blockFromPreset(preset, title)
+
   const steps = prompt
-    .split(/[,.;\n]|\s(?:then|→|->|leads to|followed by)\s/i)
+    .split(/[,.;\n]|\s(?:and|with|then|→|->|leads to|followed by)\s/i)
     .map((step) => step.replace(/^(?:a|an|the)\s+/i, '').trim())
     .filter((step) => step.length > 2 && step.length < 64)
-    .slice(0, 5)
-  const labels = steps.length >= 2 ? steps : [title || 'Input', 'Process', 'Output']
+    .slice(0, 6)
+  const subject = (title || prompt).slice(0, 60) || 'Process Diagram'
+  const effectiveKind: DiagramKind =
+    kind === 'figure' || kind === 'schematic' || kind === 'labeled' ? 'mindmap' : kind
+  const labels = steps.length >= 2 ? steps : [subject, 'Core Drivers', 'Key Mechanisms', 'Outcomes']
+
+  const nodes = labels.map((label) => ({
+    id: uid('n'),
+    label: label.charAt(0).toUpperCase() + label.slice(1),
+  }))
+
+  const edges =
+    effectiveKind === 'mindmap'
+      ? nodes.slice(1).map((node) => ({ from: nodes[0].id, to: node.id }))
+      : effectiveKind === 'cycle'
+        ? nodes.map((node, index) => ({ from: node.id, to: nodes[(index + 1) % nodes.length].id }))
+        : nodes.slice(1).map((node, index) => ({ from: nodes[index].id, to: node.id }))
+
   return {
     id: uid('dia'),
     type: 'diagram',
-    diagram: kind,
-    title: title || prompt.slice(0, 60) || 'Diagram',
-    caption: 'Flowchart — edit any label in place',
-    nodes: labels.map((label) => ({ id: uid('n'), label: label.charAt(0).toUpperCase() + label.slice(1) })),
-    edges: labels.slice(1).map((_, index) => ({ from: `local-${index}`, to: `local-${index + 1}` })),
+    diagram: effectiveKind,
+    title: subject,
+    caption: `${effectiveKind === 'cycle' ? 'Feedback cycle' : effectiveKind === 'mindmap' ? 'Concept map' : 'Process flow'} — edit labels directly`,
+    nodes,
+    edges,
     accent: '',
   }
 }
 
-/** Links local preset edges by index when node ids are regenerated. */
 function linkSequential(block: DocBlock): DocBlock {
   if (block.type !== 'diagram') return block
   const ids = block.nodes.map((node) => node.id)
@@ -94,33 +130,29 @@ export async function generateDiagram(
   prompt: string,
   kind: DiagramKind,
 ): Promise<{ block: DocBlock; local: boolean }> {
+  if (kind === 'figure') return generateFigure(settings, prompt)
   if (!hasAi(settings)) return { block: linkSequential(localDiagram(prompt, kind)), local: true }
+  const vectorKind = kind === 'schematic' || kind === 'labeled' ? 'mindmap' : kind
   try {
     const raw = await ask(
       settings,
       SYSTEM_PRINT,
-      `Create a print-ready ${kind} diagram about: "${prompt}".
+      `Create a crisp print-ready ${vectorKind} diagram about: "${prompt}".
 Return JSON:
 {
   "title": "short figure title",
-  "caption": "Fig 1.1: one-line source or note",
-  "diagram": "${kind}",
-  "nodes": [{"id":"n1","label":"max 5 words","detail":"optional 3 words","shape":"box|pill|ellipse|diamond|circle|note","tone":"oxygenated|deoxygenated|tissue|highlight|neutral","side":"left|right|inside","badge":1,"x":0-100,"y":0-100,"w":percent,"h":percent}],
-  "edges": [{"from":"n1","to":"n2","label":"max 4 words, optional","dashed":false,"tone":"oxygenated|deoxygenated","curve":-20}]
+  "caption": "Fig: one-line explanatory note",
+  "diagram": "${vectorKind}",
+  "nodes": [{"id":"n1","label":"max 5 words","detail":"optional 3 words","shape":"box|pill|ellipse|diamond|circle"}],
+  "edges": [{"from":"n1","to":"n2","label":"max 4 words, optional","dashed":false}]
 }
 Rules:
-- 4 to 10 nodes, every label a crisp anatomy/process term a student must learn.
-- ${kind === 'schematic' ? `Draw a textbook anatomical schematic like a printed biology plate:
-  * Place every structure with x/y percentages (5-95) and w/h in percent, shaped as the real structure (pill = vessel, ellipse = chamber, box = apparatus part).
-  * Colour-code with "tone": red "oxygenated" for oxygen-rich vessels and chambers on that path, blue "deoxygenated" for oxygen-poor, "tissue" for organ tissue, "highlight" for valves/junctions, "neutral" for plain structure.
-  * Put each label in the outer gutter with "side":"left" or "right" and add a short "badge" key number where a numbered key helps.
-  * Trace the flow with edges that carry tone and a "curve" in SVG units (-40 to 40); do not label the arrows.` : kind === 'labeled' ? 'Place nodes like a textbook figure using x/y percentages (5-95) and w/h in percent. Give the core structure shapes, not floating text.' : 'Do not use x/y; the layout engine lays these out.'}
-- ${kind === 'flow' ? 'A linear process: one arrow per consecutive step, 4-7 nodes.' : kind === 'cycle' ? 'A closed loop: the last edge returns to the first node.' : kind === 'schematic' ? 'Keep structures inside the central stage: x between 18 and 82 so the outer gutter stays free for labels.' : 'Central concept first, then 4-6 branches connected to it.'}
-- Every label must be specific to the requested subject (e.g. "Left ventricle", "MPC repo rate", "Ray through F"), never generic.
-${docContext()}`,
-      2600,
+- 4 to 7 nodes, every label a specific, insightful term for the requested topic.
+- Do not include x/y coordinates; the layout engine arranges flows, cycles, and mindmaps cleanly.
+- ${vectorKind === 'flow' ? 'Linear sequence: connect each step to the next.' : vectorKind === 'cycle' ? 'Closed feedback loop: the final edge connects back to the first node.' : 'Central topic as node 1, with 4-6 branches radiating from it.'}`,
+      2200,
     )
-    const normalized = normalizeDiagram(raw, kind)
+    const normalized = normalizeDiagram(raw, vectorKind)
     if (normalized) return { block: normalized, local: false }
     throw new VisualError('The model returned an unusable diagram.')
   } catch {
@@ -129,14 +161,20 @@ ${docContext()}`,
 }
 
 /* ------------------------------------------------------------------------- */
-/* Tables, callouts and step lists (used by 1-click suggestions)               */
+/* Tables, callouts, stats and step lists                                     */
 /* ------------------------------------------------------------------------- */
 
 function sectionText(doc: PdfDoc | undefined, sectionId: string): string {
   const section = doc?.sections.find((entry) => entry.id === sectionId)
   if (!section) return ''
   return section.blocks
-    .map((block) => ('text' in block ? block.text : block.type === 'keyterms' ? block.items.map((item) => `${item.term}: ${item.definition}`).join(' ') : ''))
+    .map((block) =>
+      'text' in block
+        ? block.text
+        : block.type === 'keyterms'
+          ? block.items.map((item) => `${item.term}: ${item.definition}`).join(' ')
+          : '',
+    )
     .join(' ')
 }
 
@@ -158,10 +196,10 @@ export function localTable(prompt: string, doc?: PdfDoc, sectionId = ''): DocBlo
       id: uid('b'),
       type: 'table',
       caption: `${terms[0].term} vs ${terms[1].term}`,
-      columns: ['Basis', terms[0].term, terms[1].term],
+      columns: ['Dimension', terms[0].term, terms[1].term],
       rows: [
-        ['Meaning', terms[0].definition, terms[1].definition],
-        ['Exam use', 'Define and distinguish from the other term.', 'Define and distinguish from the other term.'],
+        ['Definition', terms[0].definition, terms[1].definition],
+        ['Key takeaway', 'Primary focus area', 'Complementary concept'],
       ],
     }
   }
@@ -173,9 +211,9 @@ export function localTable(prompt: string, doc?: PdfDoc, sectionId = ''): DocBlo
     id: uid('b'),
     type: 'table',
     caption: prompt.slice(0, 60),
-    columns: ['Point', 'What to remember'],
-    rows: (sentences.length ? sentences : ['Add the comparison here.']).map((sentence, index) => [
-      `Point ${index + 1}`,
+    columns: ['Point', 'Key Detail'],
+    rows: (sentences.length ? sentences : ['Add comparison rows here.']).map((sentence, index) => [
+      `Item ${index + 1}`,
       sentence.slice(0, 140),
     ]),
   }
@@ -193,8 +231,8 @@ export async function generateTable(
       settings,
       SYSTEM_PRINT,
       `Create a print-ready comparison table for: "${prompt}".
-Return JSON: {"caption":"...","columns":["Basis","A","B"],"rows":[["...","...","..."]]}
-Rules: 2 to 4 columns, 3 to 5 rows, short cells (max 8 words each), factually accurate for the subject.${docContext(doc)}`
+Return JSON: {"caption":"...","columns":["Dimension","A","B"],"rows":[["...","...","..."]]}
+Rules: 2 to 4 columns, 3 to 5 rows, short crisp cells (max 9 words each), factually accurate.${docContext(doc)}`,
     )
     const record = (raw ?? {}) as Record<string, unknown>
     const columns = (Array.isArray(record.columns) ? record.columns : []).map((column) => String(column)).slice(0, 4)
@@ -223,18 +261,27 @@ Rules: 2 to 4 columns, 3 to 5 rows, short cells (max 8 words each), factually ac
 }
 
 export function localMnemonic(prompt: string, doc?: PdfDoc, sectionId = ''): DocBlock {
-  const terms = doc?.sections.find((section) => section.id === sectionId)?.blocks.flatMap((block) => (block.type === 'keyterms' ? block.items : [])) ?? []
-  const letters = terms.slice(0, 5).map((item) => item.term.charAt(0).toUpperCase()).join('')
+  const terms =
+    doc?.sections
+      .find((section) => section.id === sectionId)
+      ?.blocks.flatMap((block) => (block.type === 'keyterms' ? block.items : [])) ?? []
+  const letters = terms
+    .slice(0, 5)
+    .map((item) => item.term.charAt(0).toUpperCase())
+    .join('')
   const body = terms.length
-    ? `${letters || 'KEY'} — ${terms.slice(0, 5).map((item) => `${item.term.charAt(0).toUpperCase()} is ${item.term}`).join('; ')}.`
-    : `Remember the sequence in ${prompt.slice(0, 50)} as one short phrase, then unpack each letter.`
+    ? `${letters || 'KEY'} — ${terms
+        .slice(0, 5)
+        .map((item) => `${item.term.charAt(0).toUpperCase()} is ${item.term}`)
+        .join('; ')}.`
+    : `Summarise the core idea of ${prompt.slice(0, 50)} in one memorable takeaway.`
   return {
     id: uid('co'),
     type: 'callout',
     kind: 'tip',
     icon: 'bulb',
     accent: '',
-    title: letters ? `Mnemonic · ${letters}` : 'Memory trick',
+    title: letters ? `Key Takeaway · ${letters}` : 'Key Takeaway',
     body,
   }
 }
@@ -242,7 +289,7 @@ export function localMnemonic(prompt: string, doc?: PdfDoc, sectionId = ''): Doc
 export async function generateCallout(
   settings: AppSettings,
   prompt: string,
-  preset: 'exam' | 'tip' | 'summary' | 'warning' = 'exam',
+  preset: 'exam' | 'tip' | 'summary' | 'warning' = 'tip',
   doc?: PdfDoc,
   sectionId = '',
 ): Promise<{ block: DocBlock; local: boolean }> {
@@ -251,9 +298,8 @@ export async function generateCallout(
     const raw = await ask(
       settings,
       SYSTEM_PRINT,
-      `Write a high-value "${preset}" study callout for: "${prompt}".
-Return JSON: {"title":"max 6 words","body":"2 to 3 sentences, specific facts, no filler"}
-It must be something a student can quote in an exam.${docContext(doc)}`
+      `Write a high-value "${preset}" editorial callout for: "${prompt}".
+Return JSON: {"title":"max 6 words","body":"2 to 3 sentences, specific insights, zero filler"}${docContext(doc)}`,
     )
     const record = (raw ?? {}) as Record<string, unknown>
     const title = String(record.title ?? '').trim()
@@ -282,7 +328,7 @@ export function localSteps(prompt: string, doc?: PdfDoc, sectionId = ''): DocBlo
     .map((sentence) => sentence.trim())
     .filter((sentence) => sentence.length > 18)
     .slice(0, 5)
-  const items = sentences.length >= 2 ? sentences : [prompt, 'Second step', 'Third step']
+  const items = sentences.length >= 2 ? sentences : [prompt, 'Define the key drivers', 'Execute and measure']
   return {
     id: uid('b'),
     type: 'numbered',
@@ -301,11 +347,14 @@ export async function generateSteps(
     const raw = await ask(
       settings,
       SYSTEM_PRINT,
-      `Turn this dense explanation into a clean numbered process: "${prompt}".
-Return JSON: {"items":["step 1","step 2"]} with 3 to 5 steps, each max 22 words, verb-first.${docContext(doc)}`
+      `Turn this explanation into a clean numbered action sequence: "${prompt}".
+Return JSON: {"items":["step 1","step 2"]} with 3 to 5 steps, each max 22 words, verb-first.${docContext(doc)}`,
     )
     const record = (raw ?? {}) as Record<string, unknown>
-    const items = (Array.isArray(record.items) ? record.items : []).map((item) => String(item).trim()).filter(Boolean).slice(0, 5)
+    const items = (Array.isArray(record.items) ? record.items : [])
+      .map((item) => String(item).trim())
+      .filter(Boolean)
+      .slice(0, 5)
     if (items.length < 2) throw new VisualError('No steps returned.')
     return { block: { id: uid('b'), type: 'numbered', items }, local: false }
   } catch {
@@ -314,14 +363,79 @@ Return JSON: {"items":["step 1","step 2"]} with 3 to 5 steps, each max 22 words,
 }
 
 /* ------------------------------------------------------------------------- */
-/* Charts                                                                      */
+/* KPI / Infographic Stat Cards                                               */
+/* ------------------------------------------------------------------------- */
+
+export function localStats(prompt: string): DocBlock {
+  if (/climate|warming|carbon|co2|emission|glacier|energy|ocean/i.test(prompt)) {
+    return {
+      id: uid('stats'),
+      type: 'stats',
+      title: 'Global Climate Indicators',
+      items: [
+        { id: uid('st'), value: '+1.45°C', label: 'Warming above pre-industrial', delta: '2024 Record' },
+        { id: uid('st'), value: '424 ppm', label: 'Atmospheric CO₂ level', delta: '↑ +2.8 ppm/yr' },
+        { id: uid('st'), value: '30%+', label: 'Global clean electricity share', delta: 'Solar & Wind' },
+      ],
+    }
+  }
+  const base = createStatsBlock()
+  return {
+    ...base,
+    title: prompt.slice(0, 60) || base.title,
+  }
+}
+
+export async function generateStats(
+  settings: AppSettings,
+  prompt: string,
+  doc?: PdfDoc,
+): Promise<{ block: DocBlock; local: boolean }> {
+  if (!hasAi(settings)) return { block: localStats(prompt), local: true }
+  try {
+    const raw = await ask(
+      settings,
+      SYSTEM_PRINT,
+      `Create 3 or 4 publication-grade KPI / infographic stat cards for: "${prompt}".
+Return JSON: {"title":"2 to 5 words","items":[{"value":"e.g. +1.45°C or 424 ppm or $2.4B","label":"3 to 5 word metric label","delta":"short trend badge e.g. +12% YoY"}]}
+Rules: Accurate, realistic figures for the subject. Keep values punchy (max 10 chars).${docContext(doc)}`,
+    )
+    const record = (raw ?? {}) as Record<string, unknown>
+    const items: StatMetric[] = (Array.isArray(record.items) ? record.items : [])
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object') return null
+        const item = entry as Record<string, unknown>
+        const value = String(item.value ?? '').trim()
+        const label = String(item.label ?? '').trim()
+        if (!value || !label) return null
+        const delta = String(item.delta ?? '').trim()
+        return { id: uid('st'), value: value.slice(0, 22), label: label.slice(0, 52), ...(delta ? { delta: delta.slice(0, 26) } : {}) }
+      })
+      .filter((entry): entry is StatMetric => Boolean(entry))
+      .slice(0, 4)
+    if (!items.length) throw new VisualError('No stats returned.')
+    return {
+      block: {
+        id: uid('stats'),
+        type: 'stats',
+        title: String(record.title ?? prompt).slice(0, 70) || 'Key Figures',
+        items,
+      },
+      local: false,
+    }
+  } catch {
+    return { block: localStats(prompt), local: true }
+  }
+}
+
+/* ------------------------------------------------------------------------- */
+/* Charts (2D & 3D data visualizations)                                       */
 /* ------------------------------------------------------------------------- */
 
 export function localChart(prompt: string, source = '', chart: ChartKind = 'bar'): DocBlock {
   const text = `${prompt}\n${source}`
   const labels: string[] = []
   const values: number[] = []
-  // Accepts "Q1 5.1", "Road: 42", "rail 27" and comma- or semicolon-separated briefs.
   text.split(/[,;\n]+/).forEach((fragment) => {
     const match = fragment.trim().match(/^(.*?)(-?\d+(?:\.\d+)?)\s*%?$/)
     if (!match) return
@@ -338,17 +452,17 @@ export function localChart(prompt: string, source = '', chart: ChartKind = 'bar'
     labels.push(label)
     values.push(value)
   })
+  const block = createChartBlock()
   if (labels.length < 2) {
-    const block = createChartBlock()
     return { ...block, chart, title: prompt.slice(0, 70) || block.title }
   }
-  const block = createChartBlock()
   return {
     ...block,
     chart,
     title: prompt.slice(0, 70) || block.title,
     labels: labels.slice(0, 6),
     values: values.slice(0, 6),
+    unit: /%/.test(prompt) ? '%' : '',
   }
 }
 
@@ -364,17 +478,18 @@ export async function generateChart(
       settings,
       SYSTEM_PRINT,
       `Build a publication-quality "${chart}" chart for: "${prompt}".
-Return JSON: {"title":"short chart title","labels":["..."],"values":[12,34],"values2":[10,28],"note":"one line takeaway"}
-Rules: 3 to 6 labels, short (max 3 words). values are plain numbers, realistic for the subject. Include values2 only for a comparison chart.`
+Return JSON: {"title":"short chart title","labels":["..."],"values":[12,34],"values2":[10,28],"unit":"e.g. % or °C or $M or empty","seriesA":"label A","seriesB":"label B","note":"one line takeaway"}
+Rules: 3 to 7 labels, short (max 3 words). values are plain numbers, realistic for the subject. Include values2 only for a comparison chart.`,
     )
     const record = (raw ?? {}) as Record<string, unknown>
-    const labels = Array.isArray(record.labels) ? record.labels.map((label) => String(label)).slice(0, 6) : []
+    const labels = Array.isArray(record.labels) ? record.labels.map((label) => String(label)).slice(0, 7) : []
     const values = Array.isArray(record.values)
-      ? record.values.map((value) => Number(value)).filter((value) => Number.isFinite(value)).slice(0, 6)
+      ? record.values.map((value) => Number(value)).filter((value) => Number.isFinite(value)).slice(0, 7)
       : []
     if (labels.length < 2 || values.length < 2) throw new VisualError('The model returned no usable data.')
+    const count = Math.min(labels.length, values.length)
     const values2 = Array.isArray(record.values2)
-      ? record.values2.map((value) => Number(value)).filter((value) => Number.isFinite(value)).slice(0, 6)
+      ? record.values2.map((value) => Number(value)).filter((value) => Number.isFinite(value)).slice(0, count)
       : undefined
     return {
       block: {
@@ -382,11 +497,15 @@ Rules: 3 to 6 labels, short (max 3 words). values are plain numbers, realistic f
         type: 'chart',
         chart,
         title: String(record.title ?? prompt).slice(0, 80),
-        labels,
-        values,
-        values2,
+        labels: labels.slice(0, count),
+        values: values.slice(0, count),
+        ...(values2 && values2.length ? { values2 } : {}),
         accent: '',
         accent2: '',
+        unit: record.unit ? String(record.unit).trim().slice(0, 10) : '',
+        seriesA: record.seriesA ? String(record.seriesA).trim().slice(0, 24) : undefined,
+        seriesB: record.seriesB ? String(record.seriesB).trim().slice(0, 24) : undefined,
+        note: record.note ? String(record.note).trim().slice(0, 120) : undefined,
       },
       local: false,
     }
@@ -395,13 +514,12 @@ Rules: 3 to 6 labels, short (max 3 words). values are plain numbers, realistic f
   }
 }
 
-export function chartFromSeries(text: string, chart: ChartKind, title: string): DocBlock {
+export function chartFromSeries(text: string, chart: ChartKind, title: string, unit = ''): DocBlock {
   const matrix = text
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => line.split(/\s*[|,;]\s*/))
-  // "Label | 42" is one series; "Label | 42 | 31" also carries series B.
   const piped = matrix.every((row) => row.length >= 2)
   const parsed = parseSeries(text)
   const labels = piped ? matrix.map((row) => row[0]) : parsed.labels
@@ -418,6 +536,7 @@ export function chartFromSeries(text: string, chart: ChartKind, title: string): 
     values2: values2?.slice(0, 8),
     accent: '',
     accent2: '',
+    unit,
   }
 }
 
@@ -499,9 +618,9 @@ export async function generateFormula(
     const raw = await ask(
       settings,
       SYSTEM_PRINT,
-      `Write textbook-grade LaTeX for: "${prompt}". Target the Indian exam / business audience.
+      `Write publication-grade LaTeX for: "${prompt}".
 Return JSON: {"title":"short heading","items":[{"label":"what it means","latex":"..."}],"note":"one-line usage tip"}
-Rules: 1 to 6 items. Raw LaTeX only, no $ delimiters, no markdown. Use \\frac, \\times, subscripts and Greek letters correctly.`
+Rules: 1 to 6 items. Raw LaTeX only, no $ delimiters, no markdown. Use \\frac, \\times, subscripts and Greek letters correctly.`,
     )
     const record = (raw ?? {}) as Record<string, unknown>
     const items = (Array.isArray(record.items) ? record.items : [])
@@ -533,22 +652,21 @@ Rules: 1 to 6 items. Raw LaTeX only, no $ delimiters, no markdown. Use \\frac, \
 }
 
 /* ------------------------------------------------------------------------- */
-/* AI images — real Gemini image models and Imagen                            */
+/* AI images — multi-style raster generation with silent model fallback       */
 /* ------------------------------------------------------------------------- */
 
 const IMAGE_BASE = 'https://generativelanguage.googleapis.com/v1beta'
 
-/** Appended to every brief so results read as textbook figures, not stock art. */
-export const IMAGE_STYLE_SUFFIX =
-  'clean, high-resolution, white background, educational textbook diagram with clear accurate labels'
+export const IMAGE_PLATE_STYLE =
+  'clean scientific textbook illustration on a pure plain white background, anatomically and structurally accurate, soft studio lighting, no text, no letters, no numbers, no arrows, no watermark'
 
-/** Gemini image chat models return inlineData; Imagen answers a :predict call. */
-const IMAGE_MODELS: { id: string; mode: 'chat' | 'predict' }[] = [
+const CURATED_IMAGE_MODELS: { id: string; mode: 'chat' | 'predict' }[] = [
   { id: 'gemini-2.5-flash-image', mode: 'chat' },
+  { id: 'imagen-4.0-generate-001', mode: 'predict' },
+  { id: 'imagen-4.0-fast-generate-001', mode: 'predict' },
+  { id: 'imagen-3.0-generate-002', mode: 'predict' },
   { id: 'gemini-2.0-flash-exp-image-generation', mode: 'chat' },
   { id: 'gemini-2.0-flash-preview-image-generation', mode: 'chat' },
-  { id: 'imagen-3.0-generate-002', mode: 'predict' },
-  { id: 'imagen-3.0-generate-001', mode: 'predict' },
 ]
 
 function imageFailure(status: number, body: string): string {
@@ -557,7 +675,7 @@ function imageFailure(status: number, body: string): string {
     const parsed = JSON.parse(body) as { error?: { message?: string } }
     if (parsed.error?.message) return `HTTP ${status} — ${parsed.error.message.slice(0, 180)}`
   } catch {
-    /* Provider bodies are usually JSON, but plain text is fine too. */
+    /* plain text body */
   }
   return `HTTP ${status}${text ? ` — ${text.slice(0, 180)}` : ''}`
 }
@@ -566,26 +684,42 @@ async function requestImage(
   model: { id: string; mode: 'chat' | 'predict' },
   apiKey: string,
   prompt: string,
+  aspectRatio: AspectRatioId,
   signal: AbortSignal,
 ): Promise<string> {
-  const url =
-    model.mode === 'predict'
+  const url = proxyOn()
+    ? proxyUrl('/image', { model: model.id, mode: model.mode })
+    : model.mode === 'predict'
       ? `${IMAGE_BASE}/models/${model.id}:predict`
       : `${IMAGE_BASE}/models/${model.id}:generateContent`
-  const body =
-    model.mode === 'predict'
-      ? { instances: [{ prompt }], parameters: { sampleCount: 1 } }
-      : {
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
-        }
 
-  const response = await fetch(url, {
-    method: 'POST',
-    signal,
-    headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
-    body: JSON.stringify(body),
-  })
+  const send = async (withAspect: boolean) => {
+    const body =
+      model.mode === 'predict'
+        ? {
+            instances: [{ prompt }],
+            parameters: withAspect ? { sampleCount: 1, aspectRatio } : { sampleCount: 1 },
+          }
+        : {
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: withAspect
+              ? { responseModalities: ['IMAGE', 'TEXT'], imageConfig: { aspectRatio } }
+              : { responseModalities: ['IMAGE', 'TEXT'] },
+          }
+
+    return fetch(url, {
+      method: 'POST',
+      signal,
+      headers: proxyOn() ? proxyHeaders() : { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify(body),
+    })
+  }
+
+  let response = await send(true)
+  if (!response.ok && response.status === 400) {
+    response = await send(false)
+  }
+
   if (!response.ok) {
     let detail = ''
     try {
@@ -593,7 +727,9 @@ async function requestImage(
     } catch {
       detail = ''
     }
-    throw new Error(imageFailure(response.status, detail))
+    const err = new Error(imageFailure(response.status, detail)) as Error & { status?: number }
+    err.status = response.status
+    throw err
   }
 
   const data = (await response.json()) as {
@@ -610,33 +746,62 @@ async function requestImage(
   throw new Error('no image in the response')
 }
 
+export interface GenerateImageOptions {
+  style?: VisualStyleId
+  aspect?: AspectRatioId
+  styleDirective?: string
+}
+
 /**
- * Generates a real raster illustration (Gemini image / Imagen) from the saved
- * Gemini key and returns it as a data URL the preview and print view share.
+ * Generates a high-resolution visual (photorealistic, 3D illustration, 2D vector,
+ * textbook plate, or cinematic hero) using live-discovered + curated Gemini/Imagen models.
  */
-export async function generateAiImage(settings: AppSettings, prompt: string): Promise<string> {
-  const apiKey = settings.keys.gemini?.trim()
-  if (!apiKey) {
+export async function generateAiImage(
+  settings: AppSettings,
+  prompt: string,
+  styleOrOptions: string | GenerateImageOptions = {},
+): Promise<string> {
+  const apiKey = settings.keys.gemini?.trim() ?? ''
+  if (!apiKey && !proxyOn()) {
     throw new VisualError(
-      'Image generation needs a Gemini API key.',
-      'Add your Gemini key in API Settings. Anthropic keys cannot generate images.',
+      'Image generation requires a Gemini key or Cloud Proxy.',
+      'Open API Settings to add a Gemini key, or upload/paste (Ctrl+V) any image directly.',
     )
   }
   const brief = prompt.trim()
   if (!brief) throw new VisualError('Describe the image you want first.')
 
-  const styled = `${brief}. Render as a ${IMAGE_STYLE_SUFFIX}.`
+  const opts: GenerateImageOptions =
+    typeof styleOrOptions === 'string' ? { styleDirective: styleOrOptions } : styleOrOptions
+  const directive = opts.styleDirective ?? visualStylePreset(opts.style).directive
+  const aspect: AspectRatioId = opts.aspect ?? '16:9'
+  const styled = `${brief}. Style: ${directive}.`
+
+  const liveModels = await listImageModels(apiKey)
+  const seen = new Set<string>()
+  const chain = [...liveModels, ...CURATED_IMAGE_MODELS].filter((entry) => {
+    if (seen.has(entry.id)) return false
+    seen.add(entry.id)
+    return true
+  })
+
   const controller = new AbortController()
-  const timer = window.setTimeout(() => controller.abort(), 120_000)
-  const failures: string[] = []
+  const timer = window.setTimeout(() => controller.abort(), 110_000)
 
   try {
-    for (const model of IMAGE_MODELS) {
+    for (const model of chain) {
       try {
-        return await requestImage(model, apiKey, styled, controller.signal)
+        return await requestImage(model, apiKey, styled, aspect, controller.signal)
       } catch (error) {
         if (controller.signal.aborted) break
-        failures.push(`${model.id}: ${error instanceof Error ? error.message : 'failed'}`)
+        const status = (error as { status?: number })?.status
+        console.warn(`[ClientForge Image] ${model.id} failed:`, error instanceof Error ? error.message : error)
+        if (status === 401 || status === 403) {
+          throw new VisualError(
+            'Your Gemini API key was rejected for image generation.',
+            'Verify your Gemini key in API Settings, or paste/upload your own image.',
+          )
+        }
       }
     }
   } finally {
@@ -644,22 +809,113 @@ export async function generateAiImage(settings: AppSettings, prompt: string): Pr
   }
 
   if (controller.signal.aborted) {
-    throw new VisualError(
-      'Image generation timed out after two minutes.',
-      'Try a shorter brief, then regenerate.',
-    )
+    throw new VisualError('Image generation timed out.', 'Try again or paste/upload an image directly.')
   }
   throw new VisualError(
-    `Gemini could not generate that image. ${failures.slice(0, 2).join(' · ')}`,
-    'Your key needs access to an image model (Gemini image or Imagen). Otherwise drop your own image in below.',
+    'No image model on this account could render that visual right now.',
+    'You can upload an image or press Ctrl+V anywhere to paste one instantly.',
   )
+}
+
+/* ------------------------------------------------------------------------- */
+/* Annotated real illustration figure                                         */
+/* ------------------------------------------------------------------------- */
+
+export function imageAspect(url: string): Promise<number> {
+  return new Promise((resolve) => {
+    const image = new Image()
+    image.onload = () => resolve(image.height && image.width ? image.height / image.width : 0.78)
+    image.onerror = () => resolve(0.78)
+    image.src = url
+  })
+}
+
+export async function generateFigure(
+  settings: AppSettings,
+  prompt: string,
+  title?: string,
+): Promise<{ block: DocBlock; local: boolean }> {
+  const brief = prompt.trim()
+  if (!brief) throw new VisualError('Describe the illustration you want first.')
+  const preset = presetForPrompt(brief, 'figure')
+  if (preset?.plateImage) return { block: blockFromPreset(preset, title), local: true }
+  if (!hasGeminiImages(settings)) {
+    throw new VisualError(
+      'An AI illustration requires a Gemini key or Cloud Proxy.',
+      'Add a Gemini key in API Settings, or drop/paste an image into the Images tab and click "Add Leader-Line Labels".',
+    )
+  }
+
+  let figureTitle = (title || brief).slice(0, 80)
+  let caption = ''
+  let imagePrompt = brief
+  let labels: { label: string; side: 'left' | 'right'; x: number; y: number }[] = []
+
+  if (hasAi(settings)) {
+    try {
+      const raw = await ask(
+        settings,
+        SYSTEM_PRINT,
+        `Plan a labelled editorial illustration of: "${brief}".
+Return JSON:
+{
+  "title": "short figure title",
+  "caption": "Fig 1.1: one-line explanatory note",
+  "imagePrompt": "one paragraph describing exactly what the visual shows, crisp 3D/textbook illustration with ZERO text or labels inside",
+  "labels": [{"label":"exact part or feature name","side":"left|right","x":0-100,"y":0-100}]
+}
+Rules:
+- 5 to 7 crisp labels.
+- x and y are coordinates (0-100) inside the visual.
+- Alternate "side" left/right and keep y values spaced at least 12 apart.
+- Never ask for letters, arrows or numbers inside imagePrompt.
+${docContext()}`,
+      )
+      const record = (raw ?? {}) as Record<string, unknown>
+      figureTitle = String(record.title ?? '').trim() || figureTitle
+      caption = String(record.caption ?? '').trim()
+      const planned = String(record.imagePrompt ?? '').trim()
+      if (planned.length > 20) imagePrompt = planned
+      labels = (Array.isArray(record.labels) ? record.labels : [])
+        .map((entry, index) => {
+          if (!entry || typeof entry !== 'object') return null
+          const label = entry as Record<string, unknown>
+          const text = String(label.label ?? label.name ?? '').trim()
+          if (!text) return null
+          const side = String(label.side ?? '').toLowerCase() === 'right' ? 'right' : 'left'
+          const x = Number(label.x)
+          const y = Number(label.y)
+          return {
+            label: text.slice(0, 42),
+            side: (side === 'left' && index % 2 === 1 ? 'right' : side) as 'left' | 'right',
+            x: Number.isFinite(x) ? x : 50,
+            y: Number.isFinite(y) ? y : 20 + index * 10,
+          }
+        })
+        .filter((entry): entry is { label: string; side: 'left' | 'right'; x: number; y: number } => entry !== null)
+        .slice(0, 8)
+    } catch {
+      /* generate the illustration even if label planning failed */
+    }
+  }
+
+  const url = await generateAiImage(settings, imagePrompt, { style: 'textbook-diagram', aspect: '4:3' })
+  const aspect = await imageAspect(url)
+  const block = labeledFigureBlock(
+    url,
+    aspect,
+    figureTitle,
+    labels,
+    caption || 'Annotated figure — rename labels or adjust anchor positions',
+  )
+  return { block, local: false }
 }
 
 /* ------------------------------------------------------------------------- */
 /* Image helpers                                                               */
 /* ------------------------------------------------------------------------- */
 
-export async function readImageFile(file: File, limit = 1400): Promise<string> {
+export async function readImageFile(file: File, limit = 1800): Promise<string> {
   const raw = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader()
     reader.onload = () => resolve(String(reader.result ?? ''))
@@ -672,13 +928,14 @@ export async function readImageFile(file: File, limit = 1400): Promise<string> {
     image.onerror = () => resolve()
     image.src = raw
   })
-  if (!image.width || image.width <= limit) return raw
-  const scale = limit / image.width
+  if (!image.width || (image.width <= limit && image.height <= limit)) return raw
+  const scale = Math.min(limit / image.width, limit / image.height)
   const canvas = document.createElement('canvas')
   canvas.width = Math.round(image.width * scale)
   canvas.height = Math.round(image.height * scale)
   const context = canvas.getContext('2d')
   if (!context) return raw
   context.drawImage(image, 0, 0, canvas.width, canvas.height)
-  return canvas.toDataURL('image/jpeg', 0.86)
+  const keepAlpha = file.type === 'image/png' || file.type === 'image/webp'
+  return keepAlpha ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.9)
 }

@@ -6,6 +6,7 @@ import {
   HEADER_STYLES,
   LAYOUTS,
   LAYOUT_GROUPS,
+  SLIDE_FORMATS,
   SLIDE_LAYOUTS,
   fontPreset,
 } from '../theme/presets'
@@ -22,6 +23,7 @@ export function DesignPane({
   onExportPdf,
   onPrint,
   onExportZip,
+  onExportDeckPdf,
   onExportSlide,
   onAddSlide,
   doc,
@@ -36,6 +38,7 @@ export function DesignPane({
   onExportPdf: () => void
   onPrint: () => void
   onExportZip: () => void
+  onExportDeckPdf?: () => void
   onExportSlide: (index: number) => void
   onAddSlide: () => void
   doc?: PdfDoc
@@ -51,6 +54,7 @@ export function DesignPane({
   const activeThemeGroup = THEME_GROUPS.find((group) => group.id === themeGroup) ?? THEME_GROUPS[0]
   const bodyTheme = themeTokens(settings.themeId)
   const coverTheme = themeTokens(settings.separateCoverTheme ? settings.coverThemeId : settings.themeId)
+  const slideFormatMeta = SLIDE_FORMATS.find((f) => f.id === settings.slideFormat) ?? SLIDE_FORMATS[0]
 
   const selectTheme = (id: ThemeId) => {
     if (!settings.separateCoverTheme) {
@@ -116,7 +120,7 @@ export function DesignPane({
             checked={settings.separateCoverTheme}
             onChange={(value) => onPatch({ separateCoverTheme: value })}
             label="Separate cover page theme"
-            description="Pick one canvas for the front cover and another for every body page. Brand marks, fonts and accents stay shared."
+            description="Pick one canvas for the front cover and another for every body page."
           />
 
           {settings.separateCoverTheme ? (
@@ -286,38 +290,40 @@ export function DesignPane({
         </div>
       </div>
 
-      <SectionLabel>{mode === 'pdf' ? 'Export PDF' : 'Export carousel'}</SectionLabel>
+      <SectionLabel>{mode === 'pdf' ? 'Export PDF' : 'Export Carousel / Deck'}</SectionLabel>
 
       {mode === 'pdf' ? (
         <div className="export-block">
           <div className="export-stats">
             <span>{pageCount} A4 pages</span>
-            <span>Vector text</span>
+            <span>2.5× Print-Ready</span>
           </div>
-          <Button variant="primary" icon="print" full onClick={onPrint} disabled={Boolean(busy)}>
-            {busy ?? 'Export vector PDF'}
+          <Button variant="primary" icon="download" full onClick={onExportPdf} disabled={Boolean(busy)}>
+            {busy ?? 'Download Print-Ready PDF'}
           </Button>
           <p className="export-note export-note--strong">
-            Opens the print dialog. Choose <strong>Save as PDF</strong>, paper <strong>A4</strong>, margins{' '}
-            <strong>None</strong>, background graphics <strong>on</strong>. Text stays selectable and every
-            diagram, chart and table edge stays vector-sharp.
+            Instant 1-click download at crisp 2.5× resolution — zero edge clipping, full-bleed themes, and exact page breaks.
           </p>
-          <Button variant="ghost" icon="download" full onClick={onExportPdf} disabled={Boolean(busy)}>
-            Raster PDF (fallback)
+          <Button variant="ghost" icon="print" full onClick={onPrint} disabled={Boolean(busy)}>
+            Vector Print PDF (Print Dialog)
           </Button>
           <p className="export-note">
-            The image-based 2× PDF renders even in browsers that block the print dialog. Use the vector
-            export above for client delivery.
+            Opens the browser print dialog for selectable vector text (choose Save as PDF, A4, Margins: None, Background graphics: On).
           </p>
         </div>
       ) : (
         <div className="export-block">
           <div className="export-stats">
             <span>{slideCount} slides</span>
-            <span>1080 × 1350 · 2×</span>
+            <span>{slideFormatMeta.dimensions}</span>
           </div>
-          <Button variant="primary" icon="download" full onClick={onExportZip} disabled={Boolean(busy)}>
-            {busy ?? 'Download all slides (.zip)'}
+          {onExportDeckPdf ? (
+            <Button variant="primary" icon="download" full onClick={onExportDeckPdf} disabled={Boolean(busy)}>
+              {busy ?? 'Download Deck as PDF'}
+            </Button>
+          ) : null}
+          <Button variant={onExportDeckPdf ? 'ghost' : 'primary'} icon="download" full onClick={onExportZip} disabled={Boolean(busy)}>
+            {busy ?? 'Download all slides (.zip PNG)'}
           </Button>
           <div className="slide-downloads">
             {Array.from({ length: slideCount }).map((_, index) => (
@@ -338,7 +344,7 @@ export function DesignPane({
             Add a slide
           </Button>
           <p className="export-note">
-            PNGs render at 2160 × 2700 (2× the 1080 × 1350 canvas) and land in one ZIP folder.
+            Export as a crisp multi-page PDF pitch deck or high-res PNG slides in a single ZIP.
           </p>
         </div>
       )}

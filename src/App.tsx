@@ -7,14 +7,17 @@ import { CarouselStudio } from './workspaces/CarouselStudio'
 import { PdfStudio } from './workspaces/PdfStudio'
 import { SAMPLE_CAROUSEL, SAMPLE_DOC, SAMPLE_SOURCE } from './data/sample'
 import { listModels, pickDefaultModel } from './lib/ai'
+import { configureProxy, proxyOn } from './lib/proxy'
 import { uid } from './lib/id'
 import {
   activeBrand,
   loadCarouselDraft,
+  loadCarouselDraftAsync,
   loadDocDraft,
+  loadDocDraftAsync,
   loadSettings,
-  saveCarouselDraft,
-  saveDocDraft,
+  saveCarouselDraftAsync,
+  saveDocDraftAsync,
   saveSettings,
 } from './lib/storage'
 import type { AppSettings, Carousel, PdfDoc, StudioTab } from './types'
@@ -29,6 +32,7 @@ interface Toast {
 
 export default function App() {
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings())
+  configureProxy({ enabled: settings.proxyEnabled, url: settings.proxyUrl, token: settings.proxyToken })
   const [tab, setTab] = useState<StudioTab>('pdf')
   const [doc, setDoc] = useState<PdfDoc>(() => loadDocDraft() ?? SAMPLE_DOC)
   const [carousel, setCarousel] = useState<Carousel>(() => loadCarouselDraft() ?? SAMPLE_CAROUSEL)
@@ -38,17 +42,38 @@ export default function App() {
   })
   const [modal, setModal] = useState<'vault' | 'settings' | null>(null)
   const [toasts, setToasts] = useState<Toast[]>([])
+  const [railCompact, setRailCompact] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 1440 : false,
+  )
 
   const brand = useMemo(() => activeBrand(settings), [settings])
   const catalogBootstrapped = useRef(false)
+  const draftsHydrated = useRef(false)
 
-  // Replace stale/hardcoded model ids with the account's real list on first load.
+  // Hydrate full drafts (including large HD images) from IndexedDB on mount.
+  useEffect(() => {
+    let cancelled = false
+    void Promise.all([loadDocDraftAsync(), loadCarouselDraftAsync()]).then(([savedDoc, savedCarousel]) => {
+      if (cancelled) return
+      if (savedDoc) setDoc(savedDoc)
+      if (savedCarousel) setCarousel(savedCarousel)
+      draftsHydrated.current = true
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    configureProxy({ enabled: settings.proxyEnabled, url: settings.proxyUrl, token: settings.proxyToken })
+  }, [settings.proxyEnabled, settings.proxyUrl, settings.proxyToken])
+
   useEffect(() => {
     if (catalogBootstrapped.current) return
     catalogBootstrapped.current = true
     const provider = settings.provider
     const key = settings.keys[provider]
-    if (!key.trim()) return
+    if (!key.trim() && !(proxyOn() && provider === 'gemini')) return
 
     let cancelled = false
     void listModels(provider, key)
@@ -58,7 +83,10 @@ export default function App() {
           const selected = current.models[provider]
           const listed = models.some((model) => model.id === selected)
           const wasCatalogued = current.catalog[provider].some((model) => model.id === selected)
-          const nextModel = listed || (!wasCatalogued && selected.trim()) ? selected : pickDefaultModel(models)
+          const nextModel =
+            current.autoModel || (!listed && wasCatalogued) || !selected.trim()
+              ? pickDefaultModel(models)
+              : selected
           return {
             ...current,
             catalog: { ...current.catalog, [provider]: models },
@@ -67,13 +95,12 @@ export default function App() {
         })
       })
       .catch(() => {
-        /* offline or invalid key — generation surfaces the real error */
+        /* offline or invalid key — handled silently until user generates */
       })
 
     return () => {
       cancelled = true
     }
-    // Runs once with the saved settings; later refreshes come from API Settings.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -83,12 +110,16 @@ export default function App() {
   }, [settings])
 
   useEffect(() => {
-    const timer = window.setTimeout(() => saveDocDraft(doc), 320)
+    const timer = window.setTimeout(() => {
+      if (draftsHydrated.current) void saveDocDraftAsync(doc)
+    }, 320)
     return () => window.clearTimeout(timer)
   }, [doc])
 
   useEffect(() => {
-    const timer = window.setTimeout(() => saveCarouselDraft(carousel), 320)
+    const timer = window.setTimeout(() => {
+      if (draftsHydrated.current) void saveCarouselDraftAsync(carousel)
+    }, 320)
     return () => window.clearTimeout(timer)
   }, [carousel])
 
@@ -108,13 +139,15 @@ export default function App() {
     setSources((current) => ({ ...current, [mode]: value }))
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${railCompact ? ' is-rail-compact' : ''}`}>
       <Rail
         tab={tab}
         onTab={setTab}
         onOpenVault={() => setModal('vault')}
         onOpenSettings={() => setModal('settings')}
         brandName={brand.name}
+        compact={railCompact}
+        onToggleCompact={() => setRailCompact((v) => !v)}
       />
 
       <div className="workarea">

@@ -10,11 +10,10 @@ import type {
 } from '../types'
 
 export const DIAGRAM_KINDS: { id: DiagramKind; label: string; note: string }[] = [
-  { id: 'schematic', label: 'Schematic', note: 'Anatomy, apparatus: colour-coded structures with leader-line labels' },
-  { id: 'labeled', label: 'Labeled diagram', note: 'Anatomy, apparatus, maps' },
-  { id: 'flow', label: 'Flowchart', note: 'Process and transmission steps' },
-  { id: 'cycle', label: 'Cycle loop', note: 'Cycles and feedback loops' },
-  { id: 'mindmap', label: 'Mindmap', note: 'Concept trees and revision maps' },
+  { id: 'flow', label: 'Flowchart', note: 'Linear processes, funnels and decision chains' },
+  { id: 'cycle', label: 'Cycle Loop', note: 'Feedback loops, circular frameworks and ecosystems' },
+  { id: 'mindmap', label: 'Mindmap', note: 'Concept trees, pillars and topic breakdowns' },
+  { id: 'figure', label: 'Annotated Image', note: 'AI/uploaded illustration with crisp vector leader-line labels' },
 ]
 
 const SHAPES: DiagramShape[] = ['box', 'pill', 'ellipse', 'diamond', 'circle', 'note']
@@ -27,8 +26,6 @@ export function diagramLabel(kind: DiagramKind): string {
 
 function bindPreset(preset: DiagramPreset, title: string): DocBlock {
   const nodes = preset.nodes.map((node) => ({ ...node, id: uid('n') }))
-  // Preset edges are authored with node labels; remap them to the fresh ids.
-  // Figure labels wrap onto a second line, so the first line is an alias too.
   const ids = new Map<string, string>()
   nodes.forEach((node, index) => {
     const source = preset.nodes[index].label
@@ -48,13 +45,18 @@ function bindPreset(preset: DiagramPreset, title: string): DocBlock {
     diagram: preset.kind,
     title: title || preset.name,
     caption:
-      preset.kind === 'schematic'
-        ? 'Schematic — red = oxygenated, blue = deoxygenated'
-        : 'Flowchart — edit any label in place',
+      preset.caption ??
+      (preset.kind === 'figure'
+        ? 'Annotated figure — rename any label and slide its anchor'
+        : preset.kind === 'cycle'
+          ? 'Feedback cycle — edit any node in Visual Studio'
+          : 'Vector diagram — crisp at any print resolution'),
     nodes,
     edges,
     accent: '',
     plate: preset.plate,
+    plateImage: preset.plateImage,
+    plateAspect: preset.plateAspect,
   }
 }
 
@@ -68,11 +70,12 @@ export function normalizeDiagram(raw: unknown, fallbackKind: DiagramKind = 'flow
   if (!raw || typeof raw !== 'object') return null
   const record = raw as Record<string, unknown>
   const rawKind = String(record.diagram ?? record.kind ?? record.type ?? fallbackKind).toLowerCase()
-  const kind: DiagramKind = (['flow', 'cycle', 'mindmap', 'labeled', 'schematic'] as const).includes(
+  const picked: DiagramKind = (['flow', 'cycle', 'mindmap', 'labeled', 'schematic', 'figure'] as const).includes(
     rawKind as DiagramKind,
   )
     ? (rawKind as DiagramKind)
     : fallbackKind
+  const kind: DiagramKind = picked === 'figure' ? 'labeled' : picked
 
   const rawNodes = Array.isArray(record.nodes) ? record.nodes : Array.isArray(record.labels) ? record.labels : []
   const nodes: DiagramNode[] = rawNodes
@@ -151,7 +154,7 @@ function numeric(value: unknown): number | undefined {
 }
 
 /* ---------------------------------------------------------------------------
-   Local presets — the Visual Studio works with no API key at all.
+   Versatile presets across Business, Science, Climate & Education
    ------------------------------------------------------------------------- */
 
 export interface DiagramPreset {
@@ -162,113 +165,96 @@ export interface DiagramPreset {
   keywords: RegExp
   nodes: Omit<DiagramNode, 'id'>[]
   edges: DiagramEdge[]
-  /** Named anatomical artwork drawn behind the labels. */
   plate?: string
+  plateImage?: string
+  plateAspect?: number
+  caption?: string
 }
 
 export const DIAGRAM_PRESETS: DiagramPreset[] = [
   {
-    id: 'heart',
-    name: 'Human heart — pathway of blood flow',
-    subject: 'Biology',
-    kind: 'schematic',
-    plate: 'heart',
-    keywords: /heart|cardiac|atrium|ventricle|circulat|blood flow|aorta|vena cava/i,
+    id: 'process',
+    name: 'Strategic Delivery Workflow',
+    subject: 'Business',
+    kind: 'flow',
+    keywords: /process|workflow|funnel|onboarding|strategy|roadmap|launch|delivery/i,
     nodes: [
-      {
-        label: 'Superior vena cava\n(from upper body)',
-        tone: 'deoxygenated', side: 'left', badge: 1, anchorX: 47, anchorY: 21,
-      },
-      {
-        label: 'Right pulmonary artery\n(to right lung)',
-        tone: 'deoxygenated', side: 'left', anchorX: 39, anchorY: 24,
-      },
-      {
-        label: 'Right pulmonary veins\n(from right lung)',
-        tone: 'oxygenated', side: 'left', anchorX: 25, anchorY: 44,
-      },
-      { label: 'Right atrium', tone: 'tissue', side: 'left', anchorX: 46, anchorY: 44 },
-      {
-        label: 'Right AV valve',
-        tone: 'highlight', side: 'left', badge: 3, anchorX: 52, anchorY: 53,
-      },
-      {
-        label: 'Pulmonary valve',
-        tone: 'highlight', side: 'left', anchorX: 55, anchorY: 48,
-      },
-      { label: 'Right ventricle', tone: 'tissue', side: 'left', anchorX: 48, anchorY: 68 },
-      {
-        label: 'Inferior vena cava\n(from lower body)',
-        tone: 'deoxygenated', side: 'left', badge: 2, anchorX: 34, anchorY: 84,
-      },
-      {
-        label: 'Left pulmonary artery\n(to left lung)',
-        tone: 'deoxygenated', side: 'right', badge: 5, anchorX: 78, anchorY: 26,
-      },
-      {
-        label: 'Aorta\n(to body)',
-        tone: 'oxygenated', side: 'right', badge: 10, anchorX: 62, anchorY: 16,
-      },
-      { label: 'Aortic valve', tone: 'highlight', side: 'right', anchorX: 67, anchorY: 48 },
-      { label: 'Left atrium', tone: 'tissue', side: 'right', anchorX: 72, anchorY: 43 },
-      {
-        label: 'Left pulmonary veins\n(from left lung)',
-        tone: 'oxygenated', side: 'right', anchorX: 85, anchorY: 41,
-      },
-      { label: 'Left AV valve', tone: 'highlight', side: 'right', anchorX: 67, anchorY: 53 },
-      { label: 'Left ventricle', tone: 'tissue', side: 'right', anchorX: 68, anchorY: 68 },
-      { label: 'Septum', tone: 'neutral', side: 'right', anchorX: 58, anchorY: 68 },
-    ],
-    edges: [],
-  },
-  {
-    id: 'neuron',
-    name: 'Neuron — signal pathway',
-    subject: 'Biology',
-    kind: 'schematic',
-    keywords: /neuron|nerve|synapse|axon|dendrit|myelin/i,
-    nodes: [
-      {
-        label: 'Dendrites\n(receive impulses)',
-        shape: 'ellipse', tone: 'tissue', side: 'left', x: 16, y: 24, w: 16, h: 12,
-      },
-      { label: 'Cell body (soma)', shape: 'ellipse', tone: 'tissue', side: 'left', x: 37, y: 50, w: 18, h: 20 },
-      { label: 'Nucleus', shape: 'circle', tone: 'highlight', side: 'left', x: 37, y: 50, w: 8, h: 10 },
-      { label: 'Axon', shape: 'pill', tone: 'tissue', side: 'right', x: 75, y: 50, w: 26, h: 4 },
-      { label: 'Myelin sheath', shape: 'pill', tone: 'neutral', side: 'right', x: 64, y: 50, w: 12, h: 10 },
-      { label: 'Node of Ranvier', shape: 'pill', tone: 'highlight', side: 'right', x: 55, y: 50, w: 4, h: 7 },
-      { label: 'Synaptic terminals', shape: 'ellipse', tone: 'highlight', side: 'right', x: 87, y: 50, w: 11, h: 9 },
+      { label: 'Audit & Discovery', shape: 'pill' },
+      { label: 'Architecture & Design', shape: 'box' },
+      { label: 'Execution & QA', shape: 'box' },
+      { label: 'Client Handover & Growth', shape: 'note' },
     ],
     edges: [
-      { from: 'Dendrites', to: 'Cell body (soma)', tone: 'highlight', curve: 6 },
-      { from: 'Cell body (soma)', to: 'Axon', tone: 'highlight', curve: -6 },
-      { from: 'Axon', to: 'Synaptic terminals', tone: 'highlight', curve: -4 },
+      { from: 'Audit & Discovery', to: 'Architecture & Design' },
+      { from: 'Architecture & Design', to: 'Execution & QA' },
+      { from: 'Execution & QA', to: 'Client Handover & Growth' },
     ],
   },
   {
-    id: 'plant-cell',
-    name: 'Plant cell',
-    subject: 'Biology',
-    kind: 'labeled',
-    keywords: /plant cell|chloroplast|vacuole|cell wall|organelle/i,
+    id: 'climate-loop',
+    name: 'Climate Albedo Feedback Loop',
+    subject: 'Climate',
+    kind: 'cycle',
+    keywords: /climate|warming|albedo|carbon|greenhouse|ice|emission/i,
     nodes: [
-      { label: 'Cell wall', x: 50, y: 9, shape: 'note', w: 18 },
-      { label: 'Cell membrane', x: 22, y: 24, shape: 'box', w: 24 },
-      { label: 'Chloroplast', x: 74, y: 28, shape: 'ellipse', w: 20 },
-      { label: 'Nucleus', x: 42, y: 44, shape: 'circle', w: 16 },
-      { label: 'Vacuole', x: 66, y: 58, shape: 'ellipse', w: 22 },
-      { label: 'Mitochondria', x: 26, y: 64, shape: 'ellipse', w: 22 },
-      { label: 'Cytoplasm', x: 50, y: 80, shape: 'note', w: 20 },
+      { label: 'Rising global temperatures' },
+      { label: 'Arctic sea ice melts' },
+      { label: 'Surface albedo drops' },
+      { label: 'More solar heat absorbed' },
+      { label: 'Ocean warming accelerates' },
     ],
     edges: [
-      { from: 'Cell wall', to: 'Cell membrane', label: 'outer layer' },
-      { from: 'Nucleus', to: 'Cytoplasm', dashed: true },
-      { from: 'Chloroplast', to: 'Vacuole', label: 'glucose storage', dashed: true },
+      { from: 'Rising global temperatures', to: 'Arctic sea ice melts' },
+      { from: 'Arctic sea ice melts', to: 'Surface albedo drops' },
+      { from: 'Surface albedo drops', to: 'More solar heat absorbed' },
+      { from: 'More solar heat absorbed', to: 'Ocean warming accelerates' },
+      { from: 'Ocean warming accelerates', to: 'Rising global temperatures' },
+    ],
+  },
+  {
+    id: 'growth-flywheel',
+    name: 'Content & Client Growth Flywheel',
+    subject: 'Marketing',
+    kind: 'cycle',
+    keywords: /flywheel|growth|content|retention|loop|marketing/i,
+    nodes: [
+      { label: 'High-value content' },
+      { label: 'Audience trust & reach' },
+      { label: 'Qualified client leads' },
+      { label: 'Case studies & results' },
+    ],
+    edges: [
+      { from: 'High-value content', to: 'Audience trust & reach' },
+      { from: 'Audience trust & reach', to: 'Qualified client leads' },
+      { from: 'Qualified client leads', to: 'Case studies & results' },
+      { from: 'Case studies & results', to: 'High-value content' },
+    ],
+  },
+  {
+    id: 'concept-map',
+    name: 'Core Pillars Mindmap',
+    subject: 'General',
+    kind: 'mindmap',
+    keywords: /mindmap|pillar|framework|overview|ecosystem|structure/i,
+    nodes: [
+      { label: 'Core Strategy', shape: 'pill' },
+      { label: 'Audience Clarity', shape: 'box' },
+      { label: 'Visual Authority', shape: 'box' },
+      { label: 'Data & Proof', shape: 'box' },
+      { label: 'Clear Call to Action', shape: 'box' },
+      { label: 'Consistent Cadence', shape: 'box' },
+    ],
+    edges: [
+      { from: 'Core Strategy', to: 'Audience Clarity' },
+      { from: 'Core Strategy', to: 'Visual Authority' },
+      { from: 'Core Strategy', to: 'Data & Proof' },
+      { from: 'Core Strategy', to: 'Clear Call to Action' },
+      { from: 'Core Strategy', to: 'Consistent Cadence' },
     ],
   },
   {
     id: 'photosynthesis',
-    name: 'Photosynthesis cycle',
+    name: 'Photosynthesis Cycle',
     subject: 'Biology',
     kind: 'cycle',
     keywords: /photosynth|calvin|light reaction|chlorophyll/i,
@@ -290,133 +276,66 @@ export const DIAGRAM_PRESETS: DiagramPreset[] = [
     ],
   },
   {
-    id: 'optics',
-    name: 'Concave mirror ray diagram',
-    subject: 'Physics',
-    kind: 'labeled',
-    keywords: /mirror|lens|ray|optics|refract|reflect/i,
-    nodes: [
-      { label: 'Object AB', x: 24, y: 34, shape: 'note', w: 18 },
-      { label: 'Principal axis', x: 50, y: 52, shape: 'box', w: 22 },
-      { label: 'Centre of curvature C', x: 70, y: 40, shape: 'circle', w: 20 },
-      { label: 'Focus F', x: 56, y: 40, shape: 'circle', w: 12 },
-      { label: 'Pole P', x: 86, y: 40, shape: 'circle', w: 12 },
-      { label: 'Ray 1 ∥ axis', x: 38, y: 20, shape: 'note', w: 20 },
-      { label: 'Ray 2 through F', x: 36, y: 70, shape: 'note', w: 22 },
-      { label: 'Image A′B′', x: 14, y: 62, shape: 'note', w: 18 },
-    ],
-    edges: [
-      { from: 'Object AB', to: 'Centre of curvature C' },
-      { from: 'Ray 1 ∥ axis', to: 'Focus F', label: 'reflects through F' },
-      { from: 'Ray 2 through F', to: 'Pole P', label: 'reflects parallel' },
-      { from: 'Image A′B′', to: 'Pole P', dashed: true },
-    ],
-  },
-  {
-    id: 'circuit',
-    name: 'Series electric circuit',
-    subject: 'Physics',
-    kind: 'flow',
-    keywords: /circuit|resistor|voltage|current|ohm/i,
-    nodes: [
-      { label: 'Cell / battery 12 V', shape: 'box' },
-      { label: 'Switch', shape: 'pill' },
-      { label: 'Resistor R₁ = 4 Ω', shape: 'box' },
-      { label: 'Resistor R₂ = 6 Ω', shape: 'box' },
-      { label: 'Ammeter reads 1.2 A', shape: 'note' },
-    ],
-    edges: [
-      { from: 'Cell / battery 12 V', to: 'Switch' },
-      { from: 'Switch', to: 'Resistor R₁ = 4 Ω' },
-      { from: 'Resistor R₁ = 4 Ω', to: 'Resistor R₂ = 6 Ω' },
-      { from: 'Resistor R₂ = 6 Ω', to: 'Ammeter reads 1.2 A' },
-      { from: 'Ammeter reads 1.2 A', to: 'Cell / battery 12 V', label: 'return' },
-    ],
-  },
-  {
-    id: 'demand-supply',
-    name: 'Demand & supply equilibrium',
-    subject: 'Economics',
-    kind: 'labeled',
-    keywords: /demand|supply|equilibrium|elastic|market/i,
-    nodes: [
-      { label: 'Price (P)', x: 10, y: 16, shape: 'note', w: 16 },
-      { label: 'Quantity (Q)', x: 82, y: 84, shape: 'note', w: 18 },
-      { label: 'Demand curve D', x: 30, y: 62, shape: 'box', w: 22 },
-      { label: 'Supply curve S', x: 64, y: 34, shape: 'box', w: 22 },
-      { label: 'Equilibrium E (P*, Q*)', x: 48, y: 48, shape: 'circle', w: 26 },
-      { label: 'Excess supply', x: 70, y: 16, shape: 'note', w: 20 },
-      { label: 'Excess demand', x: 22, y: 84, shape: 'note', w: 20 },
-    ],
-    edges: [
-      { from: 'Demand curve D', to: 'Equilibrium E (P*, Q*)', label: 'slopes down' },
-      { from: 'Supply curve S', to: 'Equilibrium E (P*, Q*)', label: 'slopes up' },
-      { from: 'Price (P)', to: 'Equilibrium E (P*, Q*)', dashed: true },
-      { from: 'Quantity (Q)', to: 'Equilibrium E (P*, Q*)', dashed: true },
-    ],
-  },
-  {
     id: 'monetary',
-    name: 'Monetary transmission',
+    name: 'Monetary Transmission',
     subject: 'Economics',
     kind: 'flow',
     keywords: /monetary|repo|mpc|hawkish|dovish|inflation|rbi|interest rate/i,
     nodes: [
-      { label: 'RBI policy rate change', shape: 'pill' },
-      { label: 'MPC decision: repo rate ±25 bps', shape: 'box' },
-      { label: 'Bank lending & deposit rates adjust', shape: 'box' },
-      { label: 'Credit offtake and investment shift', shape: 'box' },
-      { label: 'Aggregate demand moves', shape: 'box' },
-      { label: 'Inflation and growth respond', shape: 'note' },
+      { label: 'Policy rate change', shape: 'pill' },
+      { label: 'Interbank & repo rates shift', shape: 'box' },
+      { label: 'Bank lending rates adjust', shape: 'box' },
+      { label: 'Credit & investment move', shape: 'box' },
+      { label: 'Inflation & growth respond', shape: 'note' },
     ],
     edges: [
-      { from: 'RBI policy rate change', to: 'MPC decision: repo rate ±25 bps' },
-      { from: 'MPC decision: repo rate ±25 bps', to: 'Bank lending & deposit rates adjust' },
-      { from: 'Bank lending & deposit rates adjust', to: 'Credit offtake and investment shift' },
-      { from: 'Credit offtake and investment shift', to: 'Aggregate demand moves' },
-      { from: 'Aggregate demand moves', to: 'Inflation and growth respond' },
+      { from: 'Policy rate change', to: 'Interbank & repo rates shift' },
+      { from: 'Interbank & repo rates shift', to: 'Bank lending rates adjust' },
+      { from: 'Bank lending rates adjust', to: 'Credit & investment move' },
+      { from: 'Credit & investment move', to: 'Inflation & growth respond' },
     ],
   },
   {
-    id: 'water-cycle',
-    name: 'Water cycle',
-    subject: 'Geography',
-    kind: 'cycle',
-    keywords: /water cycle|evaporat|condensat|precipitat|hydrolog/i,
+    id: 'heart-real',
+    name: 'Human heart — real illustration',
+    subject: 'Biology',
+    kind: 'figure',
+    plateImage: '/figures/heart-real.jpg',
+    plateAspect: 1,
+    caption: 'Real illustration — red = oxygenated, blue = deoxygenated',
+    keywords: /heart|cardiac|atrium|ventricle|circulat|blood flow|aorta|vena cava|pulmonary/i,
     nodes: [
-      { label: 'Evaporation from oceans' },
-      { label: 'Transpiration from plants' },
-      { label: 'Condensation into clouds' },
-      { label: 'Precipitation (rain, snow)' },
-      { label: 'Surface runoff & infiltration' },
-      { label: 'Groundwater storage' },
+      { label: 'Superior vena cava\n(from upper body)', side: 'left', badge: 1, anchorX: 37, anchorY: 24 },
+      { label: 'Right atrium', side: 'left', badge: 2, anchorX: 31, anchorY: 45 },
+      { label: 'Right ventricle', side: 'left', badge: 3, anchorX: 38, anchorY: 66 },
+      { label: 'Coronary vessels\n(heart muscle supply)', side: 'left', badge: 4, anchorX: 48, anchorY: 79 },
+      { label: 'Aorta\n(to body)', side: 'right', badge: 5, anchorX: 58, anchorY: 12 },
+      { label: 'Pulmonary artery\n(to lungs)', side: 'right', badge: 6, anchorX: 60, anchorY: 31 },
+      { label: 'Left atrium', side: 'right', badge: 7, anchorX: 68, anchorY: 42 },
+      { label: 'Left ventricle', side: 'right', badge: 8, anchorX: 66, anchorY: 70 },
     ],
-    edges: [
-      { from: 'Evaporation from oceans', to: 'Condensation into clouds' },
-      { from: 'Transpiration from plants', to: 'Condensation into clouds' },
-      { from: 'Condensation into clouds', to: 'Precipitation (rain, snow)' },
-      { from: 'Precipitation (rain, snow)', to: 'Surface runoff & infiltration' },
-      { from: 'Surface runoff & infiltration', to: 'Groundwater storage' },
-      { from: 'Groundwater storage', to: 'Evaporation from oceans' },
-    ],
+    edges: [],
   },
   {
-    id: 'process',
-    name: 'Four-step process',
-    subject: 'Business',
-    kind: 'flow',
-    keywords: /process|workflow|funnel|onboarding|strategy/i,
+    id: 'blood-real',
+    name: 'Composition of blood — real illustration',
+    subject: 'Biology',
+    kind: 'figure',
+    plateImage: '/figures/blood-real.jpg',
+    plateAspect: 1,
+    caption: 'Real illustration — plasma, buffy coat, packed cells and formed elements',
+    keywords:
+      /blood\s*(composition|compon|cell|group|sample|plasma)|plasma|rbc|wbc|platelet|erythrocyt|leucocyt|thrombocyt/i,
     nodes: [
-      { label: 'Diagnose the problem', shape: 'pill' },
-      { label: 'Design the intervention', shape: 'box' },
-      { label: 'Deliver with owners and dates', shape: 'box' },
-      { label: 'Measure and iterate', shape: 'note' },
+      { label: 'Plasma\n(55% of blood)', side: 'left', badge: 1, anchorX: 47, anchorY: 32 },
+      { label: 'Buffy coat\n(white cells & platelets)', side: 'left', badge: 2, anchorX: 47, anchorY: 50 },
+      { label: 'Packed red cells\n(45% of blood)', side: 'left', badge: 3, anchorX: 46, anchorY: 72 },
+      { label: 'Whole blood sample', side: 'left', badge: 4, anchorX: 44, anchorY: 90 },
+      { label: 'Red blood cell\n(erythrocyte)', side: 'right', badge: 5, anchorX: 69, anchorY: 32 },
+      { label: 'White blood cell\n(leucocyte)', side: 'right', badge: 6, anchorX: 66, anchorY: 60 },
+      { label: 'Platelets\n(thrombocytes)', side: 'right', badge: 7, anchorX: 72, anchorY: 56 },
     ],
-    edges: [
-      { from: 'Diagnose the problem', to: 'Design the intervention' },
-      { from: 'Design the intervention', to: 'Deliver with owners and dates' },
-      { from: 'Deliver with owners and dates', to: 'Measure and iterate' },
-    ],
+    edges: [],
   },
 ]
 
@@ -429,43 +348,54 @@ export function blockFromPreset(preset: DiagramPreset, title?: string): DocBlock
   return bindPreset(preset, title || preset.name)
 }
 
-/**
- * Wraps a real illustration (uploaded or AI-generated) in the same labelling
- * system as the vector plates: text in the gutters, leader lines to the art.
- */
 export function labeledFigureBlock(
   url: string,
   aspect: number,
   title = 'Labelled figure',
+  labels?: { label: string; side?: DiagramSide; x?: number; y?: number }[],
+  caption = 'Annotated figure — rename each label and set its anchor position',
 ): DocBlock {
-  const starters: { label: string; side: 'left' | 'right'; x: number; y: number }[] = [
-    { label: 'Structure A', side: 'left', x: 30, y: 28 },
-    { label: 'Structure B', side: 'left', x: 30, y: 58 },
-    { label: 'Structure C', side: 'right', x: 70, y: 34 },
-    { label: 'Structure D', side: 'right', x: 70, y: 64 },
-  ]
+  const starters: { label: string; side: 'left' | 'right'; x: number; y: number }[] = labels?.length
+    ? labels.map((entry, index) => ({
+        label: entry.label,
+        side: entry.side === 'right' ? 'right' : entry.side === 'left' ? 'left' : index % 2 ? 'right' : 'left',
+        x: clampPercent(entry.x, 50),
+        y: clampPercent(entry.y, 50),
+      }))
+    : [
+        { label: 'Feature A', side: 'left', x: 30, y: 28 },
+        { label: 'Feature B', side: 'left', x: 30, y: 58 },
+        { label: 'Feature C', side: 'right', x: 70, y: 34 },
+        { label: 'Feature D', side: 'right', x: 70, y: 64 },
+      ]
   return {
     id: uid('dia'),
     type: 'diagram',
     diagram: 'schematic',
     plateImage: url,
     plateAspect: aspect > 0 ? aspect : 0.78,
-    title: title.replace(/^fig(?:ure)?\.?\s*\d+(?:\.\d+)?\s*[:.–—-]\s*/i, '').trim() || 'Labelled figure',
-    caption: 'Labelled figure — rename each label and drag its position',
+    title: title.replace(/^fig(?:ure)?\.?\s*\d+(?:\.\d+)?\s*[:.–—-]\s*/i, '').trim() || 'Annotated figure',
+    caption,
     accent: '',
     edges: [],
-    nodes: starters.map((entry) => ({
+    nodes: starters.map((entry, index) => ({
       id: uid('n'),
       label: entry.label,
       side: entry.side,
+      badge: index + 1,
       anchorX: entry.x,
       anchorY: entry.y,
     })),
   }
 }
 
+function clampPercent(value: number | undefined, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+  return Math.min(96, Math.max(4, Math.round(value)))
+}
+
 /* ---------------------------------------------------------------------------
-   Geometry — one canvas, viewBox 0 0 560 H, positioned nodes in percent.
+   Geometry — one canvas, viewBox 0 0 W H, auto-sized heights for zero clipping
    ------------------------------------------------------------------------- */
 
 export interface LaidOutNode extends DiagramNode {
@@ -473,7 +403,6 @@ export interface LaidOutNode extends DiagramNode {
   cy: number
   w: number
   h: number
-  /** Schematic side labels: resolved column, wrapped lines and top edge. */
   labelSide?: 'left' | 'right'
   labelLines?: string[]
   labelX?: number
@@ -486,20 +415,17 @@ export interface DiagramLayout {
   nodes: LaidOutNode[]
   byId: Map<string, LaidOutNode>
   schematic?: boolean
-  /** Box the anatomical plate is painted into, in canvas units. */
   plate?: { x: number; y: number; w: number; h: number }
 }
 
 const WIDTH = 560
 
-/* Scientific schematics use a wider stage with gutters for leader-line labels. */
 export const SCHEMATIC_WIDTH = 690
 const SCHEMATIC_HEIGHT = 440
 const SCHEMATIC_INSET = 128
 const SCHEMATIC_TOP = 16
 const SCHEMATIC_BOTTOM = 38
 
-/** Wraps a label on explicit line breaks, then on width — shared by layout and paint. */
 export function wrapText(label: string, maxChars: number): string[] {
   const lines: string[] = []
   label.split(/\n/).forEach((paragraph) => {
@@ -518,10 +444,12 @@ export function wrapText(label: string, maxChars: number): string[] {
   return lines.length ? lines.slice(0, 4) : [label]
 }
 
-/**
- * Textbook figure layout: structures stay on the stage, labels sit in the
- * left/right gutters with a leader line back to the structure they name.
- */
+function nodeHeightFor(label: string, boxW: number, minH: number): number {
+  const maxChars = Math.max(10, Math.round((boxW - 18) / 6.2))
+  const lines = wrapText(label, maxChars).length
+  return Math.max(minH, lines * 13 + 20)
+}
+
 function layoutSchematic(block: Extract<DocBlock, { type: 'diagram' }>): DiagramLayout {
   const hasSideLabels = block.nodes.some((node) => node.side === 'left' || node.side === 'right')
   const inset = hasSideLabels ? SCHEMATIC_INSET : 26
@@ -530,16 +458,16 @@ function layoutSchematic(block: Extract<DocBlock, { type: 'diagram' }>): Diagram
   const total = Math.max(1, block.nodes.length)
 
   const nodes: LaidOutNode[] = block.nodes.map((node, index) => {
-    // Unpositioned structures fall on a ring so nothing stacks in one spot.
     const angle = (index / total) * Math.PI * 2 - Math.PI / 2
     const px = typeof node.x === 'number' ? node.x : 50 + Math.cos(angle) * 26
     const py = typeof node.y === 'number' ? node.y : 50 + Math.sin(angle) * 28
+    const w = typeof node.w === 'number' ? (node.w / 100) * stageW : 108
     return {
       ...node,
       cx: inset + (px / 100) * stageW,
       cy: SCHEMATIC_TOP + (py / 100) * stageH,
-      w: typeof node.w === 'number' ? (node.w / 100) * stageW : 96,
-      h: typeof node.h === 'number' ? (node.h / 100) * stageH : 44,
+      w,
+      h: typeof node.h === 'number' ? (node.h / 100) * stageH : nodeHeightFor(node.label, w, 44),
     }
   })
 
@@ -554,7 +482,6 @@ function layoutSchematic(block: Extract<DocBlock, { type: 'diagram' }>): Diagram
   }
 }
 
-/** Stacks gutter labels by vertical order and keeps a readable gap between them. */
 function placeSideLabels(nodes: LaidOutNode[], inset: number, width: number, top: number) {
   const columns: Record<'left' | 'right', LaidOutNode[]> = { left: [], right: [] }
   nodes.forEach((node) => {
@@ -577,18 +504,16 @@ function placeSideLabels(nodes: LaidOutNode[], inset: number, width: number, top
 }
 
 const PLATE_WIDTH = 760
-const PLATE_INSET = 132
+const PLATE_INSET = 136
 const PLATE_TOP = 10
 const PLATE_RATIO = 560 / 640
 const PLATE_LEGEND = 28
 
-/** Anatomical plate: art fills the centre stage, labels sit in the gutters. */
 function layoutPlate(block: Extract<DocBlock, { type: 'diagram' }>): DiagramLayout {
   const aspect = block.plateAspect && block.plateAspect > 0 ? block.plateAspect : PLATE_RATIO
   let artW = PLATE_WIDTH - PLATE_INSET * 2
   let artH = Math.round(artW * aspect)
-  // Very tall uploads shrink instead of overflowing the page block.
-  const maxArtH = 540
+  const maxArtH = 520
   if (artH > maxArtH) {
     artH = maxArtH
     artW = Math.round(artH / aspect)
@@ -620,12 +545,12 @@ export function layoutDiagram(block: Extract<DocBlock, { type: 'diagram' }>): Di
   if (block.diagram === 'schematic') return layoutSchematic(block)
   const count = block.nodes.length || 1
   const positioned = block.nodes.every((node) => typeof node.x === 'number' && typeof node.y === 'number')
-  let height = 300
+  let height = 310
 
   if (block.diagram === 'flow' && !positioned) {
-    height = Math.max(220, count * 74)
+    height = Math.max(220, count * 76)
   } else if (block.diagram === 'cycle' && !positioned) {
-    height = 330
+    height = 340
   } else if (block.diagram === 'mindmap' && !positioned) {
     height = 340
   } else if (block.diagram === 'labeled' && !positioned) {
@@ -638,59 +563,65 @@ export function layoutDiagram(block: Extract<DocBlock, { type: 'diagram' }>): Di
     const providedH = typeof node.h === 'number' ? (node.h / 100) * height : undefined
 
     if (block.diagram === 'flow' && !positioned) {
-      const boxW = 300
-      const boxH = 48
+      const boxW = providedW ?? 320
+      const boxH = providedH ?? nodeHeightFor(node.label, boxW, 48)
       return {
         ...node,
         cx: WIDTH / 2,
         cy: 38 + index * 74,
-        w: providedW ?? boxW,
-        h: providedH ?? boxH,
+        w: boxW,
+        h: boxH,
       }
     }
     if (block.diagram === 'cycle' && !positioned) {
-      const radiusX = 178
-      const radiusY = 108
+      const radiusX = 182
+      const radiusY = 112
       const angle = (index / count) * Math.PI * 2 - Math.PI / 2
+      const w = 152
       return {
         ...node,
         cx: WIDTH / 2 + Math.cos(angle) * radiusX,
         cy: height / 2 + Math.sin(angle) * radiusY,
-        w: 148,
-        h: 46,
+        w,
+        h: nodeHeightFor(node.label, w, 46),
       }
     }
     if (block.diagram === 'mindmap' && !positioned) {
-      if (index === 0) return { ...node, cx: WIDTH / 2, cy: height / 2, w: 176, h: 52 }
+      if (index === 0) {
+        const w = 178
+        return { ...node, cx: WIDTH / 2, cy: height / 2, w, h: nodeHeightFor(node.label, w, 52) }
+      }
       const ringCount = count - 1
       const angle = ((index - 1) / ringCount) * Math.PI * 2 - Math.PI / 2
+      const w = 148
       return {
         ...node,
         cx: WIDTH / 2 + Math.cos(angle) * 190,
         cy: height / 2 + Math.sin(angle) * 118,
-        w: 140,
-        h: 46,
+        w,
+        h: nodeHeightFor(node.label, w, 46),
       }
     }
-    // Labeled diagrams: either explicit percent coordinates or a tidy grid.
     if (typeof node.x === 'number' && typeof node.y === 'number') {
+      const w = providedW ?? 132
       return {
         ...node,
         cx: (node.x / 100) * WIDTH,
         cy: (node.y / 100) * height,
-        w: providedW ?? 126,
-        h: providedH ?? 38,
+        w,
+        h: providedH ?? nodeHeightFor(node.label, w, 40),
       }
     }
     const perRow = 3
     const row = Math.floor(index / perRow)
     const col = index % perRow
+    const w = 152
     return {
       ...node,
       cx: 94 + col * ((WIDTH - 188) / 2),
-      cy: 48 + row * 76,
-      w: 148,
-      h: 40,
+      cy: 48 + row * 78,
+      w,
+      h: nodeHeightFor(node.label, w, 42),
     }
   })
 

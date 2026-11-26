@@ -1,16 +1,17 @@
 import { Icon } from './ui'
-import { modelLabelFor } from '../lib/brands'
+import { hasAi } from '../lib/visuals'
+import { proxyOn } from '../lib/proxy'
 import { providerPreset } from '../theme/presets'
 import type { AppSettings, StudioTab } from '../types'
 
 const TITLES: Record<StudioTab, { title: string; sub: string }> = {
   pdf: {
-    title: 'PDF Notes & eBook Studio',
-    sub: 'Transcript → structured A4 document',
+    title: 'PDF Notes, Reports & eBook Studio',
+    sub: 'Prompt or notes → publication-grade A4 document',
   },
   carousel: {
-    title: 'Social Carousel Studio',
-    sub: 'Source → 1080 × 1350 slide deck',
+    title: 'Carousels & Pitch Deck Studio',
+    sub: 'Brief → social carousel or 16:9 client deck',
   },
 }
 
@@ -29,6 +30,17 @@ export function TopBar({
 }) {
   const copy = TITLES[tab]
   const provider = providerPreset(settings.provider)
+  const aiReady = hasAi(settings)
+
+  const statusLabel = settings.directMode
+    ? 'Direct Mode (Offline)'
+    : proxyOn() && settings.provider === 'gemini'
+      ? 'Cloud Proxy · Auto'
+      : aiReady
+        ? settings.autoModel
+          ? `${provider.short} · Smart Auto`
+          : `${provider.short} · Ready`
+        : 'Connect AI'
 
   return (
     <header className="topbar glass">
@@ -43,11 +55,9 @@ export function TopBar({
           {brandLabel}
         </span>
 
-        <button type="button" className="chip" onClick={onOpenSettings} title="Change provider or model">
+        <button type="button" className="chip" onClick={onOpenSettings} title="AI routing and connection settings">
           <Icon name="sparkles" size={14} />
-          <span className="chip__text">
-            {provider.short} · {modelLabelFor(settings)}
-          </span>
+          <span className="chip__text">{statusLabel}</span>
         </button>
 
         <button
@@ -60,7 +70,7 @@ export function TopBar({
           {settings.paymentLock ? 'Payment lock on' : 'Payment lock off'}
         </button>
 
-        <button type="button" className="icon-btn" onClick={onOpenSettings} aria-label="Open API settings">
+        <button type="button" className="icon-btn" onClick={onOpenSettings} aria-label="Open AI settings">
           <Icon name="settings" size={17} />
         </button>
       </div>

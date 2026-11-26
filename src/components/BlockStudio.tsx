@@ -7,6 +7,7 @@ import {
   createCalloutBlock,
   createChartBlock,
   createImageBlock,
+  createStatsBlock,
   createTimelineBlock,
   findBlocks,
   insertBlock,
@@ -15,11 +16,13 @@ import {
   seriesText,
 } from '../lib/blocks'
 import { moveBlockById, removeBlockById, updateBlockById } from '../lib/docOps'
+import { readImageFile } from '../lib/visuals'
 import type { CalloutIcon, ChartKind, DocBlock, PdfDoc } from '../types'
 
 const BLOCK_LABELS: Record<string, string> = {
   image: 'Image',
   chart: 'Chart',
+  stats: 'Stats',
   timeline: 'Timeline',
   callout: 'Callout',
   diagram: 'Diagram',
@@ -37,32 +40,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-async function readImageFile(file: File): Promise<string> {
-  const raw = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result ?? ''))
-    reader.onerror = () => reject(new Error('unreadable'))
-    reader.readAsDataURL(file)
-  })
-  // Downscale once so the draft stays inside localStorage and export stays fast.
-  const image = new Image()
-  await new Promise<void>((resolve) => {
-    image.onload = () => resolve()
-    image.onerror = () => resolve()
-    image.src = raw
-  })
-  const limit = 1400
-  if (!image.width || image.width <= limit) return raw
-  const scale = limit / image.width
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.round(image.width * scale)
-  canvas.height = Math.round(image.height * scale)
-  const context = canvas.getContext('2d')
-  if (!context) return raw
-  context.drawImage(image, 0, 0, canvas.width, canvas.height)
-  return canvas.toDataURL('image/jpeg', 0.86)
-}
-
 export function BlockStudio({
   doc,
   onChange,
@@ -71,7 +48,7 @@ export function BlockStudio({
   onChange: (doc: PdfDoc) => void
 }) {
   const entries = findBlocks(doc).filter((entry) =>
-    ['image', 'chart', 'timeline', 'callout', 'diagram', 'math'].includes(entry.block.type),
+    ['image', 'chart', 'stats', 'timeline', 'callout', 'diagram', 'math'].includes(entry.block.type),
   )
   const [target, setTarget] = useState(doc.sections[doc.sections.length - 1]?.id ?? '')
   const [selectedId, setSelectedId] = useState<string | null>(entries[0]?.block.id ?? null)
@@ -88,7 +65,6 @@ export function BlockStudio({
 
   useEffect(() => {
     if (block?.type === 'chart') setSeriesDraft(seriesText(block.labels, block.values))
-    // Only resync when the chart being edited changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId])
 
@@ -114,9 +90,12 @@ export function BlockStudio({
         <Button variant="primary" icon="plus" full onClick={() => add(createImageBlock)}>
           Insert Image block
         </Button>
-        <div className="bs-insert__grid">
+        <div className="bs-insert__grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
           <Button icon="image" onClick={() => add(createChartBlock)}>
             Chart
+          </Button>
+          <Button icon="sparkles" onClick={() => add(createStatsBlock)}>
+            Stats
           </Button>
           <Button icon="arrow" onClick={() => add(createTimelineBlock)}>
             Timeline
@@ -143,6 +122,7 @@ export function BlockStudio({
           {entries.map((entry) => {
             const label =
               entry.block.type === 'chart' ||
+              entry.block.type === 'stats' ||
               entry.block.type === 'timeline' ||
               entry.block.type === 'diagram' ||
               entry.block.type === 'math'
@@ -209,7 +189,7 @@ export function BlockStudio({
           })}
         </ul>
       ) : (
-        <p className="bs-empty">No visual blocks yet. Insert one to build charts, timelines and callouts.</p>
+        <p className="bs-empty">No visual blocks yet. Insert one above or use Visual Studio.</p>
       )}
 
       {block?.type === 'image' ? (
@@ -218,7 +198,7 @@ export function BlockStudio({
             <TextInput
               value={block.url}
               onChange={(url) => patch({ ...block, url })}
-              placeholder="https://…"
+              placeholder="https://… or paste Ctrl+V"
             />
           </Field>
           <label className="bs-upload">
@@ -260,6 +240,20 @@ export function BlockStudio({
               ))}
             </div>
           </Field>
+          <Field label="Image fit">
+            <div className="segmented">
+              {(['contain', 'cover'] as const).map((fit) => (
+                <button
+                  key={fit}
+                  type="button"
+                  className={`segmented__item${(block.fit ?? 'contain') === fit ? ' is-active' : ''}`}
+                  onClick={() => patch({ ...block, fit })}
+                >
+                  {fit === 'contain' ? 'Full image' : '16:9 crop'}
+                </button>
+              ))}
+            </div>
+          </Field>
           <Field label="Caption">
             <TextInput
               value={block.caption}
@@ -294,6 +288,9 @@ export function BlockStudio({
           <Field label="Chart title">
             <TextInput value={block.title} onChange={(title) => patchChart({ title })} />
           </Field>
+          <Field label="Unit (optional, e.g. %, °C, $M)">
+            <TextInput value={block.unit ?? ''} onChange={(unit) => patchChart({ unit })} placeholder="%" />
+          </Field>
           <Field label="Data · one row per item (Label: value)">
             <TextArea
               rows={6}
@@ -306,30 +303,91 @@ export function BlockStudio({
             />
           </Field>
           {block.chart === 'compare' ? (
-            <Field label="Series B · optional, one value per row">
-              <TextInput
-                value={(block.values2 ?? []).join(', ')}
-                placeholder="e.g. 28, 34, 19"
-                onChange={(value) => {
-                  const values2 = value
-                    .split(/\s*[,|]\s*/)
-                    .map((entry) => Number(entry))
-                    .filter((entry) => Number.isFinite(entry))
-                  patchChart({ values2 })
-                }}
-              />
-            </Field>
+            <>
+              <Field label="Series A label">
+                <TextInput
+                  value={block.seriesA ?? ''}
+                  placeholder="Series A"
+                  onChange={(seriesA) => patchChart({ seriesA })}
+                />
+              </Field>
+              <Field label="Series B label">
+                <TextInput
+                  value={block.seriesB ?? ''}
+                  placeholder="Series B"
+                  onChange={(seriesB) => patchChart({ seriesB })}
+                />
+              </Field>
+              <Field label="Series B · comma-separated values">
+                <TextInput
+                  value={(block.values2 ?? []).join(', ')}
+                  placeholder="e.g. 28, 34, 19"
+                  onChange={(value) => {
+                    const values2 = value
+                      .split(/\s*[,|]\s*/)
+                      .map((entry) => Number(entry))
+                      .filter((entry) => Number.isFinite(entry))
+                    patchChart({ values2 })
+                  }}
+                />
+              </Field>
+            </>
           ) : null}
           <ColorField
             label="Primary accent"
-            value={block.accent}
+            value={block.accent || '#4f6bff'}
             onChange={(accent) => patchChart({ accent })}
           />
           <ColorField
             label="Secondary accent"
-            value={block.accent2}
+            value={block.accent2 || '#f59e0b'}
             onChange={(accent2) => patchChart({ accent2 })}
           />
+        </div>
+      ) : null}
+
+      {block?.type === 'stats' ? (
+        <div className="bs-inspector">
+          <Field label="Heading">
+            <TextInput value={block.title} onChange={(title) => patch({ ...block, title })} />
+          </Field>
+          {block.items.map((item, idx) => (
+            <div className="bs-event" key={item.id}>
+              <div className="bs-event__head">
+                <span>Metric {idx + 1}</span>
+              </div>
+              <TextInput
+                value={item.value}
+                onChange={(value) =>
+                  patch({
+                    ...block,
+                    items: block.items.map((st, i) => (i === idx ? { ...st, value } : st)),
+                  })
+                }
+                placeholder="Value"
+              />
+              <TextInput
+                value={item.label}
+                onChange={(label) =>
+                  patch({
+                    ...block,
+                    items: block.items.map((st, i) => (i === idx ? { ...st, label } : st)),
+                  })
+                }
+                placeholder="Label"
+              />
+              <TextInput
+                value={item.delta ?? ''}
+                onChange={(delta) =>
+                  patch({
+                    ...block,
+                    items: block.items.map((st, i) => (i === idx ? { ...st, delta } : st)),
+                  })
+                }
+                placeholder="Delta / badge (optional)"
+              />
+            </div>
+          ))}
         </div>
       ) : null}
 
@@ -375,7 +433,7 @@ export function BlockStudio({
                     items: block.items.map((entry, i) => (i === index ? { ...entry, date } : entry)),
                   })
                 }
-                placeholder="1857 or Q1 2026"
+                placeholder="Phase 01 or 2026"
               />
               <TextInput
                 value={item.title}
@@ -419,10 +477,19 @@ export function BlockStudio({
           <Field label="Caption">
             <TextInput value={block.caption} onChange={(caption) => patch({ ...block, caption })} />
           </Field>
-          <p className="bs-empty">
-            {block.nodes.length} labels · {block.diagram} diagram. Regenerate or relabel it in Visual
-            Studio.
-          </p>
+          <Field label="Node labels · one per line">
+            <TextArea
+              rows={Math.min(8, Math.max(3, block.nodes.length))}
+              value={block.nodes.map((n) => n.label).join('\n')}
+              onChange={(val) => {
+                const lines = val.split('\n')
+                patch({
+                  ...block,
+                  nodes: block.nodes.map((n, i) => ({ ...n, label: lines[i] ?? n.label })),
+                })
+              }}
+            />
+          </Field>
         </div>
       ) : null}
 
@@ -436,7 +503,6 @@ export function BlockStudio({
           </Field>
           <p className="bs-empty">
             {block.layout === 'sheet' ? `${block.items.length} formulas in this sheet` : 'Single equation'}.
-            Edit the LaTeX in Visual Studio.
           </p>
         </div>
       ) : null}
