@@ -9,7 +9,7 @@ import { DocPages } from '../render/DocPages'
 import { generateDoc } from '../lib/ai'
 import { parseDocDirect } from '../lib/directMode'
 import { moveBlockById, removeBlockById, updateBlockById } from '../lib/docOps'
-import { A4 } from '../lib/pagination'
+import { PAGE_DIMS } from '../lib/pagination'
 import { exportPdf as renderPdf, printVectorPdf, slugify } from '../lib/export'
 import { createImageBlock, insertBlock } from '../lib/blocks'
 import { extractPdfText } from '../lib/pdfExtract'
@@ -361,10 +361,15 @@ export function PdfStudio({
     const pages = Array.from(previewRef.current?.querySelectorAll<HTMLElement>('[data-pdf-page]') ?? [])
     setBusy('Preparing PDF…')
     try {
-      await renderPdf(pages, `${slugify(brand.brandName)}-${slugify(doc.title)}`, (done, total, label) => {
-        setBusy(total ? `${label}…` : label)
-        if (done === total) setBusy('Saving…')
-      })
+      await renderPdf(
+        pages,
+        `${slugify(brand.brandName)}-${slugify(doc.title)}`,
+        (done, total, label) => {
+          setBusy(total ? `${label}…` : label)
+          if (done === total) setBusy('Saving…')
+        },
+        settings.pageSize,
+      )
       notify('Print-ready PDF downloaded', 'success')
     } catch (error) {
       notify(error instanceof Error ? error.message : 'PDF export failed.', 'error')
@@ -442,11 +447,17 @@ export function PdfStudio({
               {editPulse.state === 'editing' ? 'Edited' : 'Saved'}
             </span>
           ) : null}
-          <span className="pill">{pageCount} pages · A4</span>
+          <span className="pill">
+            {pageCount} pages · {(PAGE_DIMS[settings.pageSize] ?? PAGE_DIMS.a4).label}
+          </span>
           {settings.paymentLock ? <span className="pill pill--warn">Draft watermark</span> : null}
         </div>
         <div className="preview-host" ref={previewRef}>
-          <PreviewStage naturalWidth={A4.width} itemSelector="[data-pdf-page]" itemLabel="Page">
+          <PreviewStage
+            naturalWidth={(PAGE_DIMS[settings.pageSize] ?? PAGE_DIMS.a4).width}
+            itemSelector="[data-pdf-page]"
+            itemLabel="Page"
+          >
             <DocPages
               doc={doc}
               settings={settings}

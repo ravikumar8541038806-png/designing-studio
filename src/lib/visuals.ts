@@ -70,21 +70,65 @@ function docContext(doc?: PdfDoc): string {
 /* Diagrams (clean vector flows, cycles, mindmaps & real-image figures)       */
 /* ------------------------------------------------------------------------- */
 
-export function localDiagram(prompt: string, kind: DiagramKind, title?: string): DocBlock {
-  const preset = presetForPrompt(prompt, kind)
-  if (preset) return blockFromPreset(preset, title)
+function extractSectionConcepts(doc: PdfDoc | undefined, sectionId: string): string[] {
+  const section = doc?.sections.find((s) => s.id === sectionId)
+  if (!section) return []
+  const items: string[] = []
+  const push = (raw: string) => {
+    const clean = raw.replace(/\*\*/g, '').replace(/[:：].*$/, '').trim()
+    if (clean.length >= 3 && clean.length <= 42 && !items.some((i) => i.toLowerCase() === clean.toLowerCase())) {
+      items.push(clean)
+    }
+  }
+  for (const blk of section.blocks) {
+    if (blk.type === 'subheading') push(blk.text)
+    else if (blk.type === 'keyterms') blk.items.forEach((it) => push(it.term))
+    else if (blk.type === 'bullets' || blk.type === 'numbered') blk.items.forEach((it) => push(it))
+    else if (blk.type === 'paragraph') {
+      const m = blk.text.match(/^\*\*([^*]{3,40})\*\*/)
+      if (m) push(m[1])
+    }
+    if (items.length >= 5) break
+  }
+  return items.slice(0, 5)
+}
 
+export function localDiagram(
+  prompt: string,
+  kind: DiagramKind,
+  title?: string,
+  doc?: PdfDoc,
+  sectionId = '',
+): DocBlock {
+  const cleanTitle = (title || prompt)
+    .replace(/^(?:[A-Za-z]+\s+)?labeled diagram explaining\s+/i, '')
+    .trim()
+  const sectionContext = sectionId ? sectionText(doc, sectionId).slice(0, 320) : ''
+  const preset = presetForPrompt(`${cleanTitle} ${sectionContext}`, kind)
+  if (preset) return blockFromPreset(preset, cleanTitle || preset.name)
+
+  const fromSection = sectionId ? extractSectionConcepts(doc, sectionId) : []
   const steps = prompt
+    .replace(/^(?:[A-Za-z]+\s+)?labeled diagram explaining\s+/i, '')
     .split(/[,.;\n]|\s(?:and|with|then|→|->|leads to|followed by)\s/i)
     .map((step) => step.replace(/^(?:a|an|the)\s+/i, '').trim())
-    .filter((step) => step.length > 2 && step.length < 64)
+    .filter((step) => step.length > 2 && step.length < 56)
     .slice(0, 6)
-  const subject = (title || prompt).slice(0, 60) || 'Process Diagram'
+
+  const subject = (cleanTitle || 'Concept Overview').slice(0, 56)
   const effectiveKind: DiagramKind =
     kind === 'figure' || kind === 'schematic' || kind === 'labeled' ? 'mindmap' : kind
-  const labels = steps.length >= 2 ? steps : [subject, 'Core Drivers', 'Key Mechanisms', 'Outcomes']
 
-  const nodes = labels.map((label) => ({
+  let labels: string[]
+  if (steps.length >= 2) {
+    labels = steps
+  } else if (fromSection.length >= 2) {
+    labels = effectiveKind === 'mindmap' ? [subject, ...fromSection] : fromSection
+  } else {
+    labels = [subject, 'Key Concepts', 'Core Relationships', 'Policy / Impact']
+  }
+
+  const nodes = labels.slice(0, 7).map((label) => ({
     id: uid('n'),
     label: label.charAt(0).toUpperCase() + label.slice(1),
   }))
@@ -129,9 +173,11 @@ export async function generateDiagram(
   settings: AppSettings,
   prompt: string,
   kind: DiagramKind,
+  doc?: PdfDoc,
+  sectionId = '',
 ): Promise<{ block: DocBlock; local: boolean }> {
   if (kind === 'figure') return generateFigure(settings, prompt)
-  if (!hasAi(settings)) return { block: linkSequential(localDiagram(prompt, kind)), local: true }
+  if (!hasAi(settings)) return { block: linkSequential(localDiagram(prompt, kind, undefined, doc, sectionId)), local: true }
   const vectorKind = kind === 'schematic' || kind === 'labeled' ? 'mindmap' : kind
   try {
     const raw = await ask(
@@ -149,14 +195,14 @@ Return JSON:
 Rules:
 - 4 to 7 nodes, every label a specific, insightful term for the requested topic.
 - Do not include x/y coordinates; the layout engine arranges flows, cycles, and mindmaps cleanly.
-- ${vectorKind === 'flow' ? 'Linear sequence: connect each step to the next.' : vectorKind === 'cycle' ? 'Closed feedback loop: the final edge connects back to the first node.' : 'Central topic as node 1, with 4-6 branches radiating from it.'}`,
+- ${vectorKind === 'flow' ? 'Linear sequence: connect each step to the next.' : vectorKind === 'cycle' ? 'Closed feedback loop: the final edge connects back to the first node.' : 'Central topic as node 1, with 4-6 branches radiating from it.'}${docContext(doc)}`,
       2200,
     )
     const normalized = normalizeDiagram(raw, vectorKind)
     if (normalized) return { block: normalized, local: false }
     throw new VisualError('The model returned an unusable diagram.')
   } catch {
-    return { block: linkSequential(localDiagram(prompt, kind)), local: true }
+    return { block: linkSequential(localDiagram(prompt, kind, undefined, doc, sectionId)), local: true }
   }
 }
 

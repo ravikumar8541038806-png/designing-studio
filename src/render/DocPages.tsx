@@ -3,7 +3,7 @@ import type { CSSProperties } from 'react'
 import { Editable } from '../components/Editable'
 import { setBlockText, setSectionHeading, updateBlock, updateMcq } from '../lib/docOps'
 import { CALLOUT_LABELS } from '../lib/blocks'
-import { A4, CONTENT_HEIGHT, CONTENT_WIDTH, FLOW_GAP, paginate } from '../lib/pagination'
+import { A4, FLOW_GAP, pageBudget, paginate } from '../lib/pagination'
 import type { FlowItem } from '../lib/pagination'
 import { themeFor } from '../theme/themes'
 import { ChartSvg } from './charts'
@@ -168,10 +168,12 @@ function Cover({
 }) {
   const vars = paperVars(settings, brand, 'cover')
   const theme = themeFor(settings, 'cover')
+  const budget = pageBudget(settings.pageSize, settings.pageMargin)
   const date = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
   const coverInputRef = useRef<HTMLInputElement>(null)
   const coverLayout = doc.coverImageLayout ?? 'banner'
   const hasCoverImg = Boolean(doc.coverImage)
+  const showToc = settings.showCoverToc !== false && doc.sections.length > 1 && (!hasCoverImg || coverLayout !== 'full')
 
   const cycleCoverLayout = () => {
     const order: ('banner' | 'full' | 'side')[] = ['banner', 'side', 'full']
@@ -186,7 +188,7 @@ function Cover({
       data-layout={settings.layout}
       data-header={settings.headerStyle}
       data-paper-dark={theme.dark || (hasCoverImg && coverLayout === 'full') ? 'true' : 'false'}
-      style={vars}
+      style={{ ...vars, width: budget.width, height: budget.height }}
     >
       <div className="cover__wash" aria-hidden="true" />
       <div className="cover__grid" aria-hidden="true" />
@@ -279,6 +281,20 @@ function Cover({
         ) : !hasCoverImg && coverBusy ? (
           <div className="cover__art cover__art--loading no-export">
             <div className="img-shimmer">Rendering cover visual…</div>
+          </div>
+        ) : null}
+
+        {showToc && !hasCoverImg ? (
+          <div className="cover__toc">
+            <span className="cover__toc-label">Inside this document</span>
+            <ol className="cover__toc-list">
+              {doc.sections.slice(0, 6).map((sec, idx) => (
+                <li key={sec.id}>
+                  <span className="cover__toc-num">{String(idx + 1).padStart(2, '0')}</span>
+                  <span className="cover__toc-title">{sec.heading.replace(/^\d+\.\s*/, '')}</span>
+                </li>
+              ))}
+            </ol>
           </div>
         ) : null}
       </div>
@@ -714,7 +730,7 @@ function BlockView({
       const width = Math.min(100, Math.max(25, block.width || 100))
       const fit = block.fit === 'cover' ? 'cover' : 'contain'
       return wrapWithTools(
-        <div className={`blk blk--image blk--image-${block.align}`}>
+        <div className={`blk blk--image blk--image-${block.align}${!block.url ? ' no-export' : ''}`}>
           {onUploadBlockImage ? (
             <input
               ref={fileRef}
@@ -979,26 +995,49 @@ export function DocPages({
 
   const columns = settings.layout === 'two-column-textbook' ? 2 : 1
   const columnGap = 30
+  const budget = pageBudget(settings.pageSize, settings.pageMargin)
   const measureWidth =
-    columns === 2 ? Math.floor((CONTENT_WIDTH - columnGap) / 2) : CONTENT_WIDTH
+    columns === 2 ? Math.floor((budget.contentWidth - columnGap) / 2) - 15 : budget.contentWidth
 
   const items = useMemo<FlowItem[]>(() => {
     const list: FlowItem[] = []
     doc.sections.forEach((section, sectionIndex) => {
       list.push({ key: `sec-${section.id}`, sticky: true, kind: 'section', sectionIndex })
       section.blocks.forEach((block, blockIndex) => {
-        if (block.type === 'table' && block.rows.length > TABLE_SLICE_ROWS) {
-          for (let start = 0; start < block.rows.length; start += TABLE_SLICE_ROWS) {
-            const end = Math.min(start + TABLE_SLICE_ROWS, block.rows.length)
+        if (block.type === 'table') {
+          const maxCellLen = block.rows.reduce(
+            (max, row) => Math.max(max, ...row.map((cell) => cell.length)),
+            0,
+          )
+          const sliceSize =
+            columns === 2
+              ? maxCellLen > 120 || block.columns.length >= 4
+                ? 2
+                : 3
+              : maxCellLen > 80
+                ? 4
+                : TABLE_SLICE_ROWS
+          if (block.rows.length > sliceSize) {
+            for (let start = 0; start < block.rows.length; start += sliceSize) {
+              const end = Math.min(start + sliceSize, block.rows.length)
+              list.push({
+                key: `blk-${block.id}-r${start}`,
+                sticky: false,
+                kind: 'block',
+                sectionIndex,
+                blockIndex,
+                rowStart: start,
+                rowEnd: end,
+                isContinuation: start > 0,
+              })
+            }
+          } else {
             list.push({
-              key: `blk-${block.id}-r${start}`,
+              key: `blk-${block.id}`,
               sticky: false,
               kind: 'block',
               sectionIndex,
               blockIndex,
-              rowStart: start,
-              rowEnd: end,
-              isContinuation: start > 0,
             })
           }
         } else {
@@ -1019,7 +1058,7 @@ export function DocPages({
       })
     }
     return list
-  }, [doc])
+  }, [doc, columns])
 
   useEffect(() => {
     let alive = true
@@ -1058,7 +1097,18 @@ export function DocPages({
   useEffect(() => {
     overflowChecks.current = 0
     setReserve(48)
-  }, [settings.layout, settings.fontPairing, settings.headerStyle, settings.themeId, doc.sections.length])
+  }, [
+    settings.layout,
+    settings.fontPairing,
+    settings.headerStyle,
+    settings.themeId,
+    settings.fontSize,
+    settings.headingScale,
+    settings.lineHeight,
+    settings.pageMargin,
+    settings.pageSize,
+    doc.sections.length,
+  ])
 
   useLayoutEffect(() => {
     const root = measureRef.current
@@ -1066,7 +1116,7 @@ export function DocPages({
     const nodes = Array.from(root.querySelectorAll<HTMLElement>('[data-measure-index]'))
     const measured = nodes.map((node) => node.offsetHeight)
     const sticky = items.map((item) => item.sticky)
-    const columnCapacity = CONTENT_HEIGHT - reserve
+    const columnCapacity = budget.contentHeight - reserve
     const columnsOfItems = paginate(measured, columnCapacity, sticky, FLOW_GAP)
     const grouped: number[][][] =
       columns === 2
@@ -1080,9 +1130,15 @@ export function DocPages({
   }, [
     items,
     columns,
+    budget.contentHeight,
     settings.layout,
     settings.fontPairing,
     settings.headerStyle,
+    settings.fontSize,
+    settings.headingScale,
+    settings.lineHeight,
+    settings.pageMargin,
+    settings.pageSize,
     brand.primary,
     brand.accent,
     fontsReady,
@@ -1097,9 +1153,9 @@ export function DocPages({
     const overflowing = bodies.some((body) => body.scrollHeight > body.clientHeight + 2)
     if (overflowing && overflowChecks.current < 5) {
       overflowChecks.current += 1
-      setReserve((value) => Math.min(value + 24, CONTENT_HEIGHT - 200))
+      setReserve((value) => Math.min(value + 24, budget.contentHeight - 200))
     }
-  }, [pages, reserve, settings.layout])
+  }, [pages, reserve, settings.layout, budget.contentHeight])
 
   const renderItem = (item: FlowItem, interactive = true) => {
     if (item.kind === 'section') {
@@ -1159,7 +1215,7 @@ export function DocPages({
   }
 
   const totalPages = pages.length + 1
-  const pageStyle: CSSProperties = { width: A4.width, height: A4.height }
+  const pageStyle: CSSProperties = { width: budget.width, height: budget.height }
 
   const renderPageItems = (indices: number[]) =>
     indices.map((itemIndex) => {

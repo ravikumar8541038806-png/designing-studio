@@ -54,6 +54,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   separateCoverTheme: false,
   headerStyle: 'classic',
   fontPairing: 'inter',
+  fontSize: 13.5,
+  headingScale: 1.0,
+  lineHeight: 1.55,
+  pageMargin: 56,
+  pageSize: 'a4',
+  showCoverToc: true,
   paymentLock: false,
   directMode: false,
   proxyEnabled: false,
@@ -154,6 +160,21 @@ export function loadSettings(): AppSettings {
     themeId,
     coverThemeId,
     separateCoverTheme: Boolean(stored.separateCoverTheme),
+    fontSize: typeof stored.fontSize === 'number' ? Math.min(18, Math.max(10, stored.fontSize)) : DEFAULT_SETTINGS.fontSize,
+    headingScale:
+      typeof stored.headingScale === 'number'
+        ? Math.min(1.35, Math.max(0.8, stored.headingScale))
+        : DEFAULT_SETTINGS.headingScale,
+    lineHeight:
+      typeof stored.lineHeight === 'number'
+        ? Math.min(1.85, Math.max(1.3, stored.lineHeight))
+        : DEFAULT_SETTINGS.lineHeight,
+    pageMargin:
+      typeof stored.pageMargin === 'number'
+        ? Math.min(80, Math.max(36, stored.pageMargin))
+        : DEFAULT_SETTINGS.pageMargin,
+    pageSize: stored.pageSize === 'letter' ? 'letter' : 'a4',
+    showCoverToc: stored.showCoverToc !== false,
     brands,
     activeBrandId:
       stored.activeBrandId && brands.some((b) => b.id === stored.activeBrandId)

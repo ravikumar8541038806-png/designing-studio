@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { BlockStudio } from './BlockStudio'
-import { Button, Icon, SectionLabel, Toggle } from './ui'
+import { Button, Icon, SectionLabel, Segmented, Toggle } from './ui'
 import {
   FONT_PAIRINGS,
   HEADER_STYLES,
@@ -10,8 +10,9 @@ import {
   SLIDE_LAYOUTS,
   fontPreset,
 } from '../theme/presets'
+import { PAGE_DIMS } from '../lib/pagination'
 import { THEME_GROUPS, themeName, themeTokens } from '../theme/themes'
-import type { AppSettings, PdfDoc, StudioTab, ThemeId } from '../types'
+import type { AppSettings, PageSizeId, PdfDoc, StudioTab, ThemeId } from '../types'
 
 export function DesignPane({
   mode,
@@ -270,6 +271,131 @@ export function DesignPane({
         ))}
       </div>
 
+      <SectionLabel
+        action={
+          <button
+            type="button"
+            className="link-btn"
+            onClick={() =>
+              onPatch({
+                fontSize: 13.5,
+                headingScale: 1.0,
+                lineHeight: 1.55,
+                pageMargin: 56,
+                pageSize: 'a4',
+              })
+            }
+          >
+            Reset
+          </button>
+        }
+      >
+        Typography &amp; Page Size
+      </SectionLabel>
+      <div className="typo-panel">
+        <div className="bs-chips">
+          {(
+            [
+              { label: 'Compact', fontSize: 11.5, headingScale: 0.9, lineHeight: 1.42, pageMargin: 44 },
+              { label: 'Standard', fontSize: 13.5, headingScale: 1.0, lineHeight: 1.55, pageMargin: 56 },
+              { label: 'Large', fontSize: 15.5, headingScale: 1.12, lineHeight: 1.65, pageMargin: 64 },
+            ] as const
+          ).map((preset) => (
+            <button
+              key={preset.label}
+              type="button"
+              className={`bs-chip${Math.abs((settings.fontSize || 13.5) - preset.fontSize) < 0.2 ? ' is-active' : ''}`}
+              onClick={() =>
+                onPatch({
+                  fontSize: preset.fontSize,
+                  headingScale: preset.headingScale,
+                  lineHeight: preset.lineHeight,
+                  pageMargin: preset.pageMargin,
+                })
+              }
+            >
+              {preset.label}
+            </button>
+          ))}
+        </div>
+
+        <label className="bs-field">
+          <span className="bs-field__label">Body text size · {(settings.fontSize || 13.5).toFixed(1)} px</span>
+          <input
+            className="bs-range"
+            type="range"
+            min={10}
+            max={18}
+            step={0.5}
+            value={settings.fontSize || 13.5}
+            onChange={(event) => onPatch({ fontSize: Number(event.target.value) })}
+          />
+        </label>
+
+        <label className="bs-field">
+          <span className="bs-field__label">Heading scale · {Math.round((settings.headingScale || 1) * 100)}%</span>
+          <input
+            className="bs-range"
+            type="range"
+            min={0.8}
+            max={1.35}
+            step={0.05}
+            value={settings.headingScale || 1}
+            onChange={(event) => onPatch({ headingScale: Number(event.target.value) })}
+          />
+        </label>
+
+        <label className="bs-field">
+          <span className="bs-field__label">Line spacing · {(settings.lineHeight || 1.55).toFixed(2)}</span>
+          <input
+            className="bs-range"
+            type="range"
+            min={1.3}
+            max={1.85}
+            step={0.05}
+            value={settings.lineHeight || 1.55}
+            onChange={(event) => onPatch({ lineHeight: Number(event.target.value) })}
+          />
+        </label>
+
+        {mode === 'pdf' ? (
+          <>
+            <label className="bs-field">
+              <span className="bs-field__label">Page margins · {settings.pageMargin || 56} px</span>
+              <input
+                className="bs-range"
+                type="range"
+                min={36}
+                max={80}
+                step={4}
+                value={settings.pageMargin || 56}
+                onChange={(event) => onPatch({ pageMargin: Number(event.target.value) })}
+              />
+            </label>
+
+            <div className="bs-field">
+              <span className="bs-field__label">Paper format</span>
+              <Segmented<PageSizeId>
+                ariaLabel="Paper size"
+                value={settings.pageSize || 'a4'}
+                onChange={(value) => onPatch({ pageSize: value })}
+                options={[
+                  { value: 'a4', label: 'A4 (210×297mm)' },
+                  { value: 'letter', label: 'US Letter' },
+                ]}
+              />
+            </div>
+
+            <Toggle
+              checked={settings.showCoverToc !== false}
+              onChange={(value) => onPatch({ showCoverToc: value })}
+              label="Contents preview on cover"
+              description="Displays a clean chapter index card on the cover page."
+            />
+          </>
+        ) : null}
+      </div>
+
       {mode === 'pdf' && doc && onDoc ? (
         <>
           <SectionLabel>Visual blocks</SectionLabel>
@@ -295,7 +421,7 @@ export function DesignPane({
       {mode === 'pdf' ? (
         <div className="export-block">
           <div className="export-stats">
-            <span>{pageCount} A4 pages</span>
+            <span>{pageCount} {(PAGE_DIMS[settings.pageSize] ?? PAGE_DIMS.a4).label} pages</span>
             <span>2.5× Print-Ready</span>
           </div>
           <Button variant="primary" icon="download" full onClick={onExportPdf} disabled={Boolean(busy)}>

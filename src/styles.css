@@ -6307,6 +6307,208 @@ a:hover {
 }
 
 /* =========================================================================
+   V5 · Typography Controls, Cover TOC & Agency Publication Polish
+   ========================================================================= */
+.typo-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 13px;
+  border: 1px solid rgba(16, 24, 40, 0.08);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+/* Dynamic Typography & Margins shared by .paper-page and .paper--measure */
+:is(.paper-page, .paper--measure) {
+  font-size: var(--doc-font, 13.5px);
+  line-height: var(--doc-leading, 1.55);
+}
+
+:is(.paper-page, .paper--measure) .paper-head,
+:is(.paper-page, .paper--measure) .paper-body,
+:is(.paper-page, .paper--measure) .paper-foot {
+  padding-left: var(--paper-pad, 56px);
+  padding-right: var(--paper-pad, 56px);
+}
+
+:is(.paper-page, .paper--measure) .paper-cover {
+  padding: var(--paper-pad, 56px);
+}
+
+:is(.paper-page, .paper--measure) .cover__title {
+  font-size: calc(46px * var(--doc-head-scale, 1));
+}
+
+:is(.paper-page, .paper--measure) .sec__title {
+  font-size: calc(22px * var(--doc-head-scale, 1));
+}
+
+:is(.paper-page, .paper--measure) .blk-sub__text {
+  font-size: calc(14.5px * var(--doc-head-scale, 1));
+  border-left: 3px solid var(--brand);
+  padding-left: 10px;
+  margin-top: 4px;
+}
+
+:is(.paper-page, .paper--measure) .blk-lead__text {
+  font-size: calc(var(--doc-font, 13.5px) * 1.12);
+  line-height: var(--doc-leading, 1.55);
+}
+
+:is(.paper-page, .paper--measure) .blk-p__text {
+  font-size: var(--doc-font, 13.5px);
+  line-height: var(--doc-leading, 1.55);
+}
+
+:is(.paper-page, .paper--measure) .blk-list li {
+  font-size: calc(var(--doc-font, 13.5px) * 0.96);
+  line-height: var(--doc-leading, 1.55);
+}
+
+:is(.paper-page, .paper--measure) .blk-terms__term,
+:is(.paper-page, .paper--measure) .blk-terms__def {
+  font-size: calc(var(--doc-font, 13.5px) * 0.9);
+  line-height: var(--doc-leading, 1.48);
+}
+
+:is(.paper-page, .paper--measure) .blk-table tbody td {
+  font-size: calc(var(--doc-font, 13.5px) * 0.86);
+  line-height: 1.45;
+  white-space: pre-line;
+}
+
+:is(.paper-page, .paper--measure)[data-layout='two-column-textbook'] .blk-table thead th,
+:is(.paper-page, .paper--measure)[data-layout='two-column-textbook'] .blk-table tbody td {
+  padding: 6px 6px;
+  font-size: calc(var(--doc-font, 13.5px) * 0.76);
+  line-height: 1.38;
+  overflow-wrap: anywhere;
+}
+
+:is(.paper-page, .paper--measure) .callout__body {
+  font-size: calc(var(--doc-font, 13.5px) * 0.92);
+  line-height: var(--doc-leading, 1.5);
+}
+
+/* Agency Polish: Cover Eyebrow Pill + Executive TOC Card */
+.cover__eyebrow {
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+  color: var(--brand);
+  border: 1px solid color-mix(in srgb, var(--brand) 25%, transparent);
+}
+
+.cover__toc {
+  margin-top: 22px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--paper-line);
+  background: color-mix(in srgb, var(--paper-soft) 78%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.cover__toc-label {
+  display: block;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--paper-muted);
+  margin-bottom: 10px;
+}
+
+.cover__toc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 20px;
+}
+
+.cover__toc-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11.4px;
+  line-height: 1.35;
+  color: var(--paper-ink);
+  min-width: 0;
+}
+
+.cover__toc-num {
+  font-size: 9.5px;
+  font-weight: 800;
+  color: var(--brand);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+.cover__toc-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Agency Polish: Key Terms Glossary Card */
+.blk-terms {
+  border: 1px solid var(--paper-line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--paper-soft) 65%, transparent);
+  padding: 4px 14px;
+}
+
+.blk-terms__row:last-child {
+  border-bottom: 0;
+}
+
+.blk-terms__term {
+  color: var(--brand);
+  font-weight: 700;
+}
+
+/* Agency Polish: Tables with Zebra Striping & Brand Header Rule */
+.blk-table thead th {
+  background: color-mix(in srgb, var(--brand) 9%, var(--paper-soft)) !important;
+  border-top: 2px solid var(--brand) !important;
+  border-bottom: 1px solid var(--paper-line) !important;
+  color: var(--paper-ink) !important;
+  padding: 8px 9px !important;
+}
+
+.blk-table tbody tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--paper-soft) 55%, transparent);
+}
+
+/* Agency Polish: Centered KaTeX Display Equation Card */
+.math-block {
+  border-radius: 8px;
+  border-left-width: 3.5px;
+  padding: 11px 16px;
+}
+
+.math-block--card .math-block__expr {
+  text-align: center;
+  padding: 4px 0;
+}
+
+/* Slide typography scaling */
+.slide .slide__headline {
+  font-size: calc(76px * var(--doc-head-scale, 1));
+}
+
+.slide--hook .slide__headline {
+  font-size: calc(84px * var(--doc-head-scale, 1));
+}
+
+.slide--cta .slide__headline {
+  font-size: calc(88px * var(--doc-head-scale, 1));
+}
+
+/* =========================================================================
    V4 · Publication Visuals, Cover Hero, Stats Cards, Pitch Decks & Compact Rail
    ========================================================================= */
 

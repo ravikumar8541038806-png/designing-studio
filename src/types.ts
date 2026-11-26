@@ -13,6 +13,7 @@ export type AspectRatioId = '16:9' | '4:3' | '1:1' | '3:4'
 export type DocFormatId = 'auto' | 'report' | 'coaching' | 'proposal' | 'playbook'
 export type InputModeId = 'auto' | 'prompt' | 'source'
 export type SlideFormatId = 'portrait' | 'square' | 'deck'
+export type PageSizeId = 'a4' | 'letter'
 
 export type LayoutId =
   // Education & exam notes
@@ -317,6 +318,18 @@ export interface AppSettings {
   separateCoverTheme: boolean
   headerStyle: HeaderStyleId
   fontPairing: FontPairingId
+  /** Base body font size in CSS pixels (10–18). */
+  fontSize: number
+  /** Heading scale multiplier (0.8–1.35). */
+  headingScale: number
+  /** Body line-height multiplier (1.3–1.85). */
+  lineHeight: number
+  /** Horizontal page padding in CSS pixels (36–80). */
+  pageMargin: number
+  /** Paper dimensions for preview & PDF export. */
+  pageSize: PageSizeId
+  /** Show numbered contents preview on the front cover. */
+  showCoverToc: boolean
   paymentLock: boolean
   /** Parse pasted text in the browser and skip the AI call entirely. */
   directMode: boolean

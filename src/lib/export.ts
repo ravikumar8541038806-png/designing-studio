@@ -1,8 +1,8 @@
 import { toPng } from 'html-to-image'
 import { jsPDF } from 'jspdf'
 import JSZip from 'jszip'
-import { A4, SLIDE_DIMS } from './pagination'
-import type { SlideFormatId } from '../types'
+import { PAGE_DIMS, SLIDE_DIMS } from './pagination'
+import type { PageSizeId, SlideFormatId } from '../types'
 
 export type ProgressFn = (done: number, total: number, label: string) => void
 
@@ -212,10 +212,16 @@ export async function printVectorPdf(fileName: string, title?: string): Promise<
  * Captures every page offscreen at 2.5× DPI with full-bleed background fidelity,
  * zero edge clipping, and zero browser print-dialog friction.
  */
-export async function exportPdf(pages: HTMLElement[], fileName: string, onProgress?: ProgressFn): Promise<void> {
+export async function exportPdf(
+  pages: HTMLElement[],
+  fileName: string,
+  onProgress?: ProgressFn,
+  pageSize: PageSizeId = 'a4',
+): Promise<void> {
   if (!pages.length) throw new Error('Nothing to export yet — generate or load a document first.')
   await waitForFonts()
-  const pdf = new jsPDF({ unit: 'pt', format: 'a4', orientation: 'portrait', compress: true })
+  const dims = PAGE_DIMS[pageSize] ?? PAGE_DIMS.a4
+  const pdf = new jsPDF({ unit: 'pt', format: pageSize, orientation: 'portrait', compress: true })
   const pageWidth = pdf.internal.pageSize.getWidth()
   const pageHeight = pdf.internal.pageSize.getHeight()
 
@@ -225,11 +231,11 @@ export async function exportPdf(pages: HTMLElement[], fileName: string, onProgre
     const background = pageBackground(node)
     let dataUrl: string
     try {
-      dataUrl = await captureNode(node, A4.width, A4.height)
+      dataUrl = await captureNode(node, dims.width, dims.height)
     } catch {
       throw new Error(`Page ${index + 1} could not be rendered. Try Vector Print PDF instead.`)
     }
-    if (index > 0) pdf.addPage()
+    if (index > 0) pdf.addPage(pageSize, 'portrait')
     const [r, g, b] = rgbTuple(background)
     pdf.setFillColor(r, g, b)
     pdf.rect(0, 0, pageWidth, pageHeight, 'F')

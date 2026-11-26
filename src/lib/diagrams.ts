@@ -173,11 +173,55 @@ export interface DiagramPreset {
 
 export const DIAGRAM_PRESETS: DiagramPreset[] = [
   {
+    id: 'circular-flow',
+    name: 'Circular Flow of Income (Three-Sector)',
+    subject: 'Economics',
+    kind: 'cycle',
+    keywords: /\b(circular flow|national income|leakages|injections|households|macroeconomic|gdp|gnp|nnp)\b/i,
+    nodes: [
+      { label: 'Households (Factor Owners)' },
+      { label: 'Factor Payments (Rent, Wages, Profit)' },
+      { label: 'Firms (Producers)' },
+      { label: 'Consumption Spending (C)' },
+      { label: 'Financial Markets & Govt (S, T ↔ I, G)' },
+    ],
+    edges: [
+      { from: 'Households (Factor Owners)', to: 'Firms (Producers)', label: 'factor services' },
+      { from: 'Firms (Producers)', to: 'Factor Payments (Rent, Wages, Profit)' },
+      { from: 'Factor Payments (Rent, Wages, Profit)', to: 'Households (Factor Owners)' },
+      { from: 'Households (Factor Owners)', to: 'Consumption Spending (C)' },
+      { from: 'Consumption Spending (C)', to: 'Financial Markets & Govt (S, T ↔ I, G)' },
+      { from: 'Financial Markets & Govt (S, T ↔ I, G)', to: 'Firms (Producers)' },
+    ],
+  },
+  {
+    id: 'budget-structure',
+    name: 'Union Budget & Fiscal Architecture',
+    subject: 'Economics',
+    kind: 'mindmap',
+    keywords: /\b(budget|fiscal deficit|revenue deficit|capex|frbm|taxation|laffer|crowding)\b/i,
+    nodes: [
+      { label: 'Union Budget', shape: 'pill' },
+      { label: 'Revenue Receipts (Tax & Non-Tax)', shape: 'box' },
+      { label: 'Revenue Expenditure (Salaries, Interest)', shape: 'box' },
+      { label: 'Capital Receipts (Borrowings, Disinvestment)', shape: 'box' },
+      { label: 'Capital Expenditure (Infra & Assets)', shape: 'box' },
+      { label: 'Fiscal & Primary Deficits', shape: 'box' },
+    ],
+    edges: [
+      { from: 'Union Budget', to: 'Revenue Receipts (Tax & Non-Tax)' },
+      { from: 'Union Budget', to: 'Revenue Expenditure (Salaries, Interest)' },
+      { from: 'Union Budget', to: 'Capital Receipts (Borrowings, Disinvestment)' },
+      { from: 'Union Budget', to: 'Capital Expenditure (Infra & Assets)' },
+      { from: 'Union Budget', to: 'Fiscal & Primary Deficits' },
+    ],
+  },
+  {
     id: 'process',
     name: 'Strategic Delivery Workflow',
     subject: 'Business',
     kind: 'flow',
-    keywords: /process|workflow|funnel|onboarding|strategy|roadmap|launch|delivery/i,
+    keywords: /\b(process|workflow|funnel|onboarding|strategy|roadmap|launch|delivery)\b/i,
     nodes: [
       { label: 'Audit & Discovery', shape: 'pill' },
       { label: 'Architecture & Design', shape: 'box' },
@@ -195,7 +239,7 @@ export const DIAGRAM_PRESETS: DiagramPreset[] = [
     name: 'Climate Albedo Feedback Loop',
     subject: 'Climate',
     kind: 'cycle',
-    keywords: /climate|warming|albedo|carbon|greenhouse|ice|emission/i,
+    keywords: /\b(climate change|global warming|albedo|greenhouse|glacier|sea ice|emission)\b/i,
     nodes: [
       { label: 'Rising global temperatures' },
       { label: 'Arctic sea ice melts' },
@@ -216,7 +260,7 @@ export const DIAGRAM_PRESETS: DiagramPreset[] = [
     name: 'Content & Client Growth Flywheel',
     subject: 'Marketing',
     kind: 'cycle',
-    keywords: /flywheel|growth|content|retention|loop|marketing/i,
+    keywords: /\b(flywheel|content marketing|audience retention|lead magnet)\b/i,
     nodes: [
       { label: 'High-value content' },
       { label: 'Audience trust & reach' },
@@ -235,7 +279,7 @@ export const DIAGRAM_PRESETS: DiagramPreset[] = [
     name: 'Core Pillars Mindmap',
     subject: 'General',
     kind: 'mindmap',
-    keywords: /mindmap|pillar|framework|overview|ecosystem|structure/i,
+    keywords: /\b(mindmap|core pillars|brand framework)\b/i,
     nodes: [
       { label: 'Core Strategy', shape: 'pill' },
       { label: 'Audience Clarity', shape: 'box' },
@@ -257,7 +301,7 @@ export const DIAGRAM_PRESETS: DiagramPreset[] = [
     name: 'Photosynthesis Cycle',
     subject: 'Biology',
     kind: 'cycle',
-    keywords: /photosynth|calvin|light reaction|chlorophyll/i,
+    keywords: /\b(photosynth\w*|calvin cycle|light reaction|chlorophyll)\b/i,
     nodes: [
       { label: 'Light absorbed by chlorophyll' },
       { label: 'Water split (photolysis)' },
@@ -277,22 +321,22 @@ export const DIAGRAM_PRESETS: DiagramPreset[] = [
   },
   {
     id: 'monetary',
-    name: 'Monetary Transmission',
+    name: 'Monetary Policy Transmission',
     subject: 'Economics',
     kind: 'flow',
-    keywords: /monetary|repo|mpc|hawkish|dovish|inflation|rbi|interest rate/i,
+    keywords: /\b(monetary|repo rate|mpc|hawkish|dovish|money supply|money multiplier|rbi|inflation|deflation)\b/i,
     nodes: [
-      { label: 'Policy rate change', shape: 'pill' },
-      { label: 'Interbank & repo rates shift', shape: 'box' },
-      { label: 'Bank lending rates adjust', shape: 'box' },
-      { label: 'Credit & investment move', shape: 'box' },
-      { label: 'Inflation & growth respond', shape: 'note' },
+      { label: 'RBI Policy Rate (Repo)', shape: 'pill' },
+      { label: 'LAF Corridor (SDF ↔ MSF)', shape: 'box' },
+      { label: 'Bank Lending & Deposit Rates', shape: 'box' },
+      { label: 'Credit & Aggregate Demand', shape: 'box' },
+      { label: 'CPI Inflation (4% ± 2%)', shape: 'note' },
     ],
     edges: [
-      { from: 'Policy rate change', to: 'Interbank & repo rates shift' },
-      { from: 'Interbank & repo rates shift', to: 'Bank lending rates adjust' },
-      { from: 'Bank lending rates adjust', to: 'Credit & investment move' },
-      { from: 'Credit & investment move', to: 'Inflation & growth respond' },
+      { from: 'RBI Policy Rate (Repo)', to: 'LAF Corridor (SDF ↔ MSF)' },
+      { from: 'LAF Corridor (SDF ↔ MSF)', to: 'Bank Lending & Deposit Rates' },
+      { from: 'Bank Lending & Deposit Rates', to: 'Credit & Aggregate Demand' },
+      { from: 'Credit & Aggregate Demand', to: 'CPI Inflation (4% ± 2%)' },
     ],
   },
   {
@@ -303,7 +347,7 @@ export const DIAGRAM_PRESETS: DiagramPreset[] = [
     plateImage: '/figures/heart-real.jpg',
     plateAspect: 1,
     caption: 'Real illustration — red = oxygenated, blue = deoxygenated',
-    keywords: /heart|cardiac|atrium|ventricle|circulat|blood flow|aorta|vena cava|pulmonary/i,
+    keywords: /\b(human heart|cardiac|atrium|ventricle|blood flow|aorta|vena cava)\b/i,
     nodes: [
       { label: 'Superior vena cava\n(from upper body)', side: 'left', badge: 1, anchorX: 37, anchorY: 24 },
       { label: 'Right atrium', side: 'left', badge: 2, anchorX: 31, anchorY: 45 },
@@ -325,7 +369,7 @@ export const DIAGRAM_PRESETS: DiagramPreset[] = [
     plateAspect: 1,
     caption: 'Real illustration — plasma, buffy coat, packed cells and formed elements',
     keywords:
-      /blood\s*(composition|compon|cell|group|sample|plasma)|plasma|rbc|wbc|platelet|erythrocyt|leucocyt|thrombocyt/i,
+      /\b(blood composition|plasma|rbc|wbc|platelet|erythrocyte|leucocyte|thrombocyte)\b/i,
     nodes: [
       { label: 'Plasma\n(55% of blood)', side: 'left', badge: 1, anchorX: 47, anchorY: 32 },
       { label: 'Buffy coat\n(white cells & platelets)', side: 'left', badge: 2, anchorX: 47, anchorY: 50 },

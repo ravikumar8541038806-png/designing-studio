@@ -8,6 +8,8 @@ import type { AppSettings, PdfDoc } from '../types'
 const ACTION_LABELS: Record<Suggestion['action']['kind'], string> = {
   diagram: 'Generate & Add diagram',
   chart: 'Generate & Add chart',
+  stats: 'Generate & Add KPI cards',
+  image: 'Generate & Add AI image',
   formula: 'Generate & Add formula box',
   table: 'Generate & Add table',
   callout: 'Generate & Add callout',
